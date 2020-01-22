@@ -117,6 +117,24 @@ public class MultiFunctionComparisonPanel extends FunctionComparisonPanel {
 	}
 
 	/**
+	 * Returns the source combo box
+	 * 
+	 * @return the source combo box
+	 */
+	public JComboBox<Function> getSourceComponent() {
+		return sourceFunctionsCB;
+	}
+
+	/**
+	 * Returns the target combo box
+	 * 
+	 * @return the target combo box
+	 */
+	public JComboBox<Function> getTargetComponent() {
+		return targetFunctionsCB;
+	}
+
+	/**
 	 * Clears out and reloads the source function list. Any selection currently
 	 * made on the list will be reestablished.
 	 */
@@ -306,9 +324,15 @@ public class MultiFunctionComparisonPanel extends FunctionComparisonPanel {
 			}
 
 			Function f = (Function) value;
-			String text = f.getName() + " (" + f.getProgram().getName() + ")";
+
+			String functionName = f.getName();
+			String functionPathToProgram = f.getProgram().getDomainFile().getPathname();
+			String functionAddress = f.getBody().getMinAddress().toString();
+			String text = functionName + "@" + functionAddress + " (" + functionPathToProgram + ")";
+
 			return super.getListCellRendererComponent(list, text, index, isSelected,
 				cellHasFocus);
 		}
 	}
+
 }
