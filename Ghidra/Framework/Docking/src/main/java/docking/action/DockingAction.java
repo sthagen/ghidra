@@ -76,7 +76,6 @@ public abstract class DockingAction implements DockingActionIf {
 	private Predicate<ActionContext> enabledPredicate;
 	private Predicate<ActionContext> popupPredicate;
 	private Predicate<ActionContext> validContextPredicate;
-	private Predicate<ActionContext> validGlobalContextPredicate;
 
 	public DockingAction(String name, String owner) {
 		this.name = name;
@@ -182,14 +181,6 @@ public abstract class DockingAction implements DockingActionIf {
 			return validContextPredicate.test(context);
 		}
 		return true;
-	}
-
-	@Override
-	public boolean isValidGlobalContext(ActionContext globalContext) {
-		if (validGlobalContextPredicate != null) {
-			return validGlobalContextPredicate.test(globalContext);
-		}
-		return isValidContext(globalContext);
 	}
 
 	/**
@@ -434,8 +425,9 @@ public abstract class DockingAction implements DockingActionIf {
 
 		// menu path
 		if (menuBarData != null) {
-			buffer.append("        MENU PATH:           ").append(
-				menuBarData.getMenuPathAsString());
+			buffer.append("        MENU PATH:           ")
+					.append(
+						menuBarData.getMenuPathAsString());
 			buffer.append('\n');
 			buffer.append("        MENU GROUP:        ").append(menuBarData.getMenuGroup());
 			buffer.append('\n');
@@ -457,8 +449,9 @@ public abstract class DockingAction implements DockingActionIf {
 
 		// popup menu path
 		if (popupMenuData != null) {
-			buffer.append("        POPUP PATH:         ").append(
-				popupMenuData.getMenuPathAsString());
+			buffer.append("        POPUP PATH:         ")
+					.append(
+						popupMenuData.getMenuPathAsString());
 			buffer.append('\n');
 			buffer.append("        POPUP GROUP:      ").append(popupMenuData.getMenuGroup());
 			buffer.append('\n');
@@ -572,17 +565,6 @@ public abstract class DockingAction implements DockingActionIf {
 		validContextPredicate = predicate;
 	}
 
-	/**
-	 * Sets a predicate for dynamically determining if this action is valid for the current global 
-	 * {@link ActionContext}.  See {@link DockingActionIf#isValidGlobalContext(ActionContext)}
-	 *  
-	 * @param predicate the predicate that will be used to dynamically determine an action's 
-	 * validity for a given global {@link ActionContext}
-	 */
-	public void validGlobalContextWhen(Predicate<ActionContext> predicate) {
-		validGlobalContextPredicate = predicate;
-	}
-
 //==================================================================================================
 // Non-public methods
 //==================================================================================================
@@ -601,12 +583,13 @@ public abstract class DockingAction implements DockingActionIf {
 			return;
 		}
 
-		inceptionInformation = getInceptionFromTheFirstClassThatIsNotUs();
+		inceptionInformation = getInceptionFromTheFirstClassThatIsNotUsOrABuilder();
 	}
 
-	protected String getInceptionFromTheFirstClassThatIsNotUs() {
+	protected String getInceptionFromTheFirstClassThatIsNotUsOrABuilder() {
 		Throwable t = ReflectionUtilities.createThrowableWithStackOlderThan(getClass());
-		StackTraceElement[] trace = t.getStackTrace();
+		StackTraceElement[] trace =
+			ReflectionUtilities.filterStackTrace(t.getStackTrace(), "ActionBuilder");
 		String classInfo = trace[0].toString();
 		return classInfo;
 	}
