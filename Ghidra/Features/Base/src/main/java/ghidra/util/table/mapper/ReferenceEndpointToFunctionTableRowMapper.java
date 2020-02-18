@@ -1,6 +1,5 @@
 /* ###
  * IP: GHIDRA
- * REVIEWED: YES
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package ghidra.app.util.demangler;
+package ghidra.util.table.mapper;
 
+import docking.widgets.table.TableRowMapper;
+import ghidra.framework.plugintool.ServiceProvider;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Program;
+import ghidra.util.table.field.ReferenceEndpoint;
 
-public interface DemanglerParser {
+public class ReferenceEndpointToFunctionTableRowMapper
+		extends TableRowMapper<ReferenceEndpoint, Function, Program> {
 
-	/**
-	 * Parses the output of the demangler process and converts
-	 * it into a demangled object.
-	 * @param mangled the original mangled string - e.g., "_ZdaPv"
-	 * @param demangled the demangled string - e.g., "operator_delete[](void*)"
-	 * @return a demangled object
-	 */
-	public DemangledObject parse(String mangled, String demangled);
+	@Override
+	public Function map(ReferenceEndpoint rowObject, Program data, ServiceProvider sp) {
+		return data.getFunctionManager().getFunctionContaining(rowObject.getAddress());
+	}
+
 }
