@@ -40,6 +40,13 @@ class PointerDB extends DataTypeDB implements Pointer {
 	private String displayName;
 
 	/**
+	 * <code>isEquivalentActive</code> is used to break cyclical recursion
+	 * when performing an {@link #isEquivalent(DataType)} checks on pointers
+	 * which must also check the base datatype equivelency.
+	 */
+	private ThreadLocal<Boolean> isEquivalentActive = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
+	/**
 	 * Constructor
 	 * @param dataMgr
 	 * @param cache
@@ -59,21 +66,19 @@ class PointerDB extends DataTypeDB implements Pointer {
 
 	@Override
 	protected String doGetName() {
-		String pointerName = PointerDataType.POINTER_NAME;
 		DataType dt = getDataType();
-		int storedLen = record.getByteValue(PointerDBAdapter.PTR_LENGTH_COL); // -1 indicates default size
+		// -1 length indicates default size from data organization
+		int storedLen = record.getByteValue(PointerDBAdapter.PTR_LENGTH_COL);
+		String lenStr = storedLen > 0 ? Integer.toString(storedLen * 8) : "";
 		if (dt == null) {
-			if (storedLen > 0) {
-				pointerName += Integer.toString(storedLen * 8);
-			}
+			return PointerDataType.POINTER_NAME + lenStr;
 		}
-		else {
-			pointerName = dt.getName() + " *";
-			if (storedLen > 0) {
-				pointerName += Integer.toString(storedLen * 8);
-			}
-		}
-		return pointerName;
+		return dt.getName() + " *" + lenStr;
+	}
+
+	@Override
+	public String toString() {
+		return getName(); // always include pointer length
 	}
 
 	@Override
@@ -130,6 +135,7 @@ class PointerDB extends DataTypeDB implements Pointer {
 
 	@Override
 	public String getDisplayName() {
+		// NOTE: Pointer display name only specifies length if null base type
 		validate(lock);
 		String localDisplayName = displayName;
 		if (localDisplayName == null) {
@@ -296,8 +302,22 @@ class PointerDB extends DataTypeDB implements Pointer {
 			return true;
 		}
 
-		return DataTypeUtilities.equalsIgnoreConflict(getDataType().getPathName(),
-			otherDataType.getPathName());
+		if (!DataTypeUtilities.equalsIgnoreConflict(getDataType().getPathName(),
+			otherDataType.getPathName())) {
+			return false;
+		}
+
+		if (isEquivalentActive.get()) {
+			return true;
+		}
+
+		isEquivalentActive.set(true);
+		try {
+			return getDataType().isEquivalent(otherDataType);
+		}
+		finally {
+			isEquivalentActive.set(false);
+		}
 	}
 
 	@Override
