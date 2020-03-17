@@ -354,14 +354,32 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Get the window which contains the specified Provider's component.
+	 * Get the window that contains the specified Provider's component
 	 * @param provider component provider
-	 * @return window or null if component is not visible or not found.
+	 * @return window or null if component is not visible or not found
 	 */
 	public Window getProviderWindow(ComponentProvider provider) {
 		ComponentPlaceholder placeholder = getActivePlaceholder(provider);
 		if (placeholder != null) {
 			return root.getWindow(placeholder);
+		}
+		return null;
+	}
+
+	/**
+	 * Get the provider that contains the specified component
+	 * @param c the component
+	 * @return the provider; null if now containing provider is found
+	 */
+	public ComponentProvider getProvider(Component c) {
+		if (c != null) {
+			DockableComponent dc = getDockableComponent(c);
+			if (dc != null) {
+				ComponentPlaceholder placeholder = dc.getComponentWindowingPlaceholder();
+				if (placeholder != null) {
+					return placeholder.getProvider();
+				}
+			}
 		}
 		return null;
 	}
@@ -2143,12 +2161,43 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	}
 
 	/**
-	 * Returns the global action context for the tool
-	 * @return  the global action context for the tool
+	 * Returns the default action context for the tool
+	 * @return the default action context for the tool
 	 */
-	public ActionContext getGlobalActionContext() {
+	public ActionContext getDefaultToolContext() {
 		return defaultProvider == null ? new ActionContext()
 				: defaultProvider.getActionContext(null);
+	}
+
+	/**
+	 * Gets the {@link ActionContext} appropriate for the given action.  This will normally
+	 * be the context from the currently focused {@link ComponentProvider}.  If that
+	 * context is not valid for the given action and the action supports using the default
+	 * tool context, then the default tool context will be returned.  Otherwise, returns null.
+	 * 
+	 * @param action the action for which to get an {@link ActionContext}
+	 * @return the {@link ActionContext} appropriate for the given action or null
+	 */
+	public ActionContext getActionContext(DockingActionIf action) {
+		ComponentProvider provider = getActiveComponentProvider();
+		ActionContext context = provider == null ? null : provider.getActionContext(null);
+
+		if (context == null) {
+			context = new ActionContext(provider, null);
+		}
+
+		if (action.isValidContext(context)) {
+			return context;
+		}
+
+		if (action.supportsDefaultToolContext()) {
+			ActionContext toolContext = getDefaultToolContext();
+			if (action.isValidContext(toolContext)) {
+				return toolContext;
+			}
+		}
+		return context;
+
 	}
 
 	void notifyContextListeners(ComponentPlaceholder placeHolder, ActionContext actionContext) {
