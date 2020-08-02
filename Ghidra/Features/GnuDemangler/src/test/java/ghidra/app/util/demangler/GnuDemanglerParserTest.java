@@ -435,6 +435,26 @@ public class GnuDemanglerParserTest extends AbstractGenericTest {
 	}
 
 	@Test
+	public void testTypeInfo_AddressTable() throws Exception {
+
+		String mangled = "_ZTIN10NonDiamond1AE";
+		String demangled = process.demangle(mangled);
+		assertEquals("typeinfo for NonDiamond::A", demangled);
+
+		DemangledObject object = parser.parse(mangled, demangled);
+		assertType(object, DemangledAddressTable.class);
+		assertName(object, "typeinfo", "NonDiamond", "A");
+
+		assertEquals("NonDiamond::A::typeinfo", object.getSignature(false));
+
+		DemangledAddressTable addressTable = (DemangledAddressTable) object;
+		assertEquals("typeinfo", addressTable.getName());
+		assertEquals("NonDiamond::A::typeinfo", addressTable.getNamespaceString());
+		assertEquals("A", addressTable.getNamespace().getNamespaceName());
+		assertEquals("NonDiamond::A", addressTable.getNamespace().getNamespaceString());
+	}
+
+	@Test
 	public void testTypeInfo() throws Exception {
 		String mangled = "_ZTIN4Arts28FileInputStream_impl_FactoryE";
 
@@ -508,6 +528,7 @@ public class GnuDemanglerParserTest extends AbstractGenericTest {
 
 		DemangledVariable variable = (DemangledVariable) object;
 		assertEquals("dot", variable.getName());
+		assertEquals("KDirLister::emitChanges()::dot", variable.getNamespaceString());
 		assertEquals("emitChanges()", variable.getNamespace().getNamespaceName());
 		assertEquals("KDirLister::emitChanges()", variable.getNamespace().getNamespaceString());
 		assertNull(variable.getDataType()); // no type information provided
@@ -1418,6 +1439,25 @@ public class GnuDemanglerParserTest extends AbstractGenericTest {
 		assertEquals(
 			"undefined GrGLFunction<unsigned_char_const*(unsigned_int)>::GrGLFunction<skia_bindings::CreateGLES2InterfaceBindings(gpu::gles2::GLES2Interface*,gpu::ContextSupport*)::$_0>(skia_bindings::CreateGLES2InterfaceBindings(gpu::gles2::GLES2Interface*,gpu::ContextSupport*)::$_0)::{lambda(void_const*,unsigned_int)#1}::__invoke(void const *,unsigned int)",
 			signature);
+	}
+
+	@Test
+	public void testFunctionWithLamba_WithUnnamedType() throws Exception {
+
+		//
+		// Mangled: _ZN13SoloGimbalEKFUt_C2Ev 
+		//
+		// Demangled: SoloGimbalEKF::{unnamed type#1}::SoloGimbalEKF()
+		//
+		String mangled = "_ZN13SoloGimbalEKFUt_C2Ev";
+		String demangled = process.demangle(mangled);
+
+		DemangledObject object = parser.parse(mangled, demangled);
+		assertNotNull(object);
+		assertType(object, DemangledFunction.class);
+
+		String signature = object.getSignature(false);
+		assertEquals("undefined SoloGimbalEKF::{unnamed_type#1}::SoloGimbalEKF(void)", signature);
 	}
 
 	@Test

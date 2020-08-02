@@ -20,11 +20,14 @@ import static org.junit.Assert.*;
 import java.awt.Window;
 import java.io.*;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import javax.swing.*;
 import javax.swing.table.TableModel;
@@ -38,16 +41,14 @@ import docking.ActionContext;
 import docking.action.DockingActionIf;
 import docking.widgets.OptionDialog;
 import docking.widgets.filter.FilterTextField;
-import docking.widgets.pathmanager.PathManager;
 import docking.widgets.table.GDynamicColumnTableModel;
 import docking.widgets.table.RowObjectTableModel;
 import docking.widgets.tree.GTree;
 import docking.widgets.tree.GTreeNode;
 import generic.jar.ResourceFile;
-import generic.test.TestUtils;
-import generic.util.Path;
 import ghidra.app.plugin.core.codebrowser.CodeBrowserPlugin;
 import ghidra.app.plugin.core.console.ConsoleComponentProvider;
+import ghidra.app.plugin.core.osgi.GhidraSourceBundle;
 import ghidra.app.script.*;
 import ghidra.app.services.ConsoleService;
 import ghidra.framework.Application;
@@ -60,11 +61,9 @@ import ghidra.util.*;
 import ghidra.util.datastruct.FixedSizeStack;
 import ghidra.util.exception.AssertException;
 import ghidra.util.exception.CancelledException;
-import ghidra.util.table.GhidraTable;
 import ghidra.util.table.GhidraTableFilterPanel;
 import ghidra.util.task.*;
 import util.CollectionUtils;
-import utilities.util.FileUtilities;
 
 public abstract class AbstractGhidraScriptMgrPluginTest
 		extends AbstractGhidraHeadedIntegrationTest {
@@ -77,7 +76,7 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 	protected ConsoleService console;
 
 	protected Program program;
-	protected GhidraTable scriptTable;
+	protected DraggableScriptTable scriptTable;
 	protected JTextPane consoleTextPane;
 	protected GhidraScriptEditorComponentProvider editor;
 	protected JTextArea editorTextArea;
@@ -88,7 +87,6 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	@Before
 	public void setUp() throws Exception {
-
 		setErrorGUIEnabled(false);
 
 		// change the eclipse port so that Eclipse doesn't try to edit the script when
@@ -100,6 +98,11 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 		env = new TestEnv();
 		env.showTool(program);
 		env.getTool().addPlugin(CodeBrowserPlugin.class.getName());
+		Path userScriptDir = java.nio.file.Paths.get(GhidraScriptUtil.USER_SCRIPTS_DIR);
+		if (Files.notExists(userScriptDir)) {
+			Files.createDirectories(userScriptDir);
+		}
+
 		env.getTool().addPlugin(GhidraScriptMgrPlugin.class.getName());
 
 		browser = env.getPlugin(CodeBrowserPlugin.class);
@@ -120,16 +123,19 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 			(JTextPane) findComponentByName(consoleProvider.getComponent(), "CONSOLE");
 		assertNotNull(consoleTextPane);
 
-		scriptTable = (GhidraTable) findComponentByName(provider.getComponent(), "SCRIPT_TABLE");
+		scriptTable =
+			(DraggableScriptTable) findComponentByName(provider.getComponent(), "SCRIPT_TABLE");
 		assertNotNull(scriptTable);
 
-		// this clears out the static map that accumulates values between tests
-		GhidraScriptUtil.clean();
-		runSwing(() -> provider.refresh());
+		clearConsole();
 
 		cleanupOldTestFiles();
 
-		clearConsole();
+		// synchronize GhidraScriptUtil static metadata with GUI metadata
+		runSwing(() -> provider.refresh());
+
+		waitForSwing();
+
 	}
 
 	protected Program buildProgram() throws Exception {
@@ -157,15 +163,39 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	@After
 	public void tearDown() throws Exception {
-
 		closeAllWindows();
 		waitForSwing();
 
-		if (testScriptFile != null) {
-			testScriptFile.delete();
+		if (testScriptFile != null && testScriptFile.exists()) {
+			deleteFile(testScriptFile);
+			testScriptFile = null;
 		}
+		wipeUserScripts();
 
 		env.dispose();
+	}
+
+	protected static void wipe(ResourceFile path) throws IOException {
+		wipe(Paths.get(path.getAbsolutePath()));
+	}
+
+	protected static void wipe(Path path) throws IOException {
+		if (Files.exists(path)) {
+			try (Stream<Path> walk = Files.walk(path)) {
+				for (Path p : (Iterable<Path>) walk.sorted(Comparator.reverseOrder())::iterator) {
+					Files.deleteIfExists(p);
+				}
+			}
+		}
+	}
+
+	protected void wipeUserScripts() throws IOException {
+		Path userScriptDir = java.nio.file.Paths.get(GhidraScriptUtil.USER_SCRIPTS_DIR);
+		try (Stream<Path> pathStream = Files.list(userScriptDir)) {
+			for (Path p : (Iterable<Path>) pathStream::iterator) {
+				wipe(p);
+			}
+		}
 	}
 
 //==================================================================================================
@@ -207,13 +237,12 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 	}
 
 	protected void assertScriptManagerKnowsAbout(ResourceFile script) {
-		assertTrue(GhidraScriptUtil.contains(script));
+		assertTrue(provider.getInfoManager().containsMetadata(script));
 		assertNull(provider.getActionManager().get(script));
 	}
 
 	protected void assertScriptManagerForgotAbout(ResourceFile script) {
-
-		assertFalse(GhidraScriptUtil.contains(script));
+		assertFalse(provider.getInfoManager().containsMetadata(script));
 		assertNull(provider.getActionManager().get(script));
 		assertNull(provider.getEditorMap().get(script));
 	}
@@ -236,20 +265,20 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	protected ResourceFile finishNewScriptDialog(String newScriptName) {
 
-		SaveDialog sd = waitForDialogComponent(SaveDialog.class);
+		SaveDialog saveDialog = waitForDialogComponent(SaveDialog.class);
 		if (newScriptName != null) {
-			setNewScriptName(sd, newScriptName);
+			setNewScriptName(saveDialog, newScriptName);
 		}
 
-		pressButtonByText(sd, "OK");
+		pressButtonByText(saveDialog, "OK");
 		waitForSwing();
 
-		ResourceFile newFile = (ResourceFile) invokeInstanceMethod("getFile", sd);
+		ResourceFile newFile = (ResourceFile) invokeInstanceMethod("getFile", saveDialog);
 		assertNotNull(newFile);
 
-		JTextField textField = (JTextField) getInstanceField("nameField", sd);
-		assertTrue("New script dialog did not close.  Message: " + sd.getStatusText() +
-			" - text: " + textField.getText(), !sd.isShowing());
+		JTextField textField = (JTextField) getInstanceField("nameField", saveDialog);
+		assertTrue("New script dialog did not close.  Message: " + saveDialog.getStatusText() +
+			" - text: " + textField.getText(), !saveDialog.isShowing());
 
 		return newFile;
 	}
@@ -309,8 +338,8 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 		GDynamicColumnTableModel<?, ?> model =
 			(GDynamicColumnTableModel<?, ?>) RowObjectTableModel.unwrap(tableModel);
 
-		int n = model.getColumnCount();
-		for (int i = 0; i < n; i++) {
+		int columnCount = model.getColumnCount();
+		for (int i = 0; i < columnCount; i++) {
 			String name = model.getColumnName(i);
 			if (columnName.equals(name)) {
 				return i;
@@ -367,7 +396,8 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 		assertNotNull(editor);
 
-		editorTextArea = (JTextArea) findComponentByName(editor.getComponent(), "EDITOR");
+		editorTextArea = (JTextArea) findComponentByName(editor.getComponent(),
+			GhidraScriptEditorComponentProvider.EDITOR_COMPONENT_NAME);
 		assertNotNull(editorTextArea);
 
 		buffer = new StringBuffer(editorTextArea.getText());
@@ -380,17 +410,18 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 		chooseJavaProvider();
 
-		SaveDialog sd = waitForDialogComponent(SaveDialog.class);
-		pressButtonByText(sd, "OK");
+		SaveDialog saveDialog = waitForDialogComponent(SaveDialog.class);
+		pressButtonByText(saveDialog, "OK");
 		waitForSwing();
 
 		// initialize our editor variable to the newly opened editor
 		editor = waitForComponentProvider(GhidraScriptEditorComponentProvider.class);
-		editorTextArea = (JTextArea) findComponentByName(editor.getComponent(), "EDITOR");
+		editorTextArea = (JTextArea) findComponentByName(editor.getComponent(),
+			GhidraScriptEditorComponentProvider.EDITOR_COMPONENT_NAME);
 
 		waitForSwing();
 
-		return sd.getFile();
+		return saveDialog.getFile();
 	}
 
 	protected void assertCannotCreateNewScriptByName(final String name) throws Exception {
@@ -822,10 +853,10 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	protected void assertEditorContentsSame(ResourceFile file, String expectedText) {
 
-		Map<ResourceFile, GhidraScriptEditorComponentProvider> map = provider.getEditorMap();
-		GhidraScriptEditorComponentProvider fileEditor = map.get(file);
-		final JTextArea textArea =
-			(JTextArea) findComponentByName(fileEditor.getComponent(), "EDITOR");
+		Map<ResourceFile, GhidraScriptEditorComponentProvider> editorMap = provider.getEditorMap();
+		GhidraScriptEditorComponentProvider fileEditor = editorMap.get(file);
+		final JTextArea textArea = (JTextArea) findComponentByName(fileEditor.getComponent(),
+			GhidraScriptEditorComponentProvider.EDITOR_COMPONENT_NAME);
 		assertNotNull(textArea);
 
 		final String[] box = new String[1];
@@ -952,26 +983,21 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	}
 
-	protected void addScriptPath(final File file) {
-		final PathManager pathManager = (PathManager) getInstanceField("pathManager", provider);
-		runSwing(() -> pathManager.addPath(new ResourceFile(file), true));
-	}
-
-	protected void cleanupOldTestFiles() {
-		// remove the 'bin' directory so that any scripts we use will be recompiled
-		List<ResourceFile> dirs = GhidraScriptUtil.getScriptBinDirectories();
-		for (ResourceFile file : dirs) {
-			FileUtilities.deleteDir(file.getFile(false));
-			file.mkdir();// recreate the file or the compiler will complain
-		}
+	protected void cleanupOldTestFiles() throws IOException {
+		// remove the compiled bundles directory so that any scripts we use will be recompiled
+		wipe(GhidraSourceBundle.getCompiledBundlesDir());
 
 		String myTestName = super.testName.getMethodName();
 
 		// destroy any NewScriptxxx files...and Temp ones too
-		PathManager pathManager = (PathManager) TestUtils.getInstanceField("pathManager", provider);
-		List<Path> paths = pathManager.getPaths();
-		for (Path path : paths) {
-			File file = path.getPath().getFile(false);
+		List<ResourceFile> paths = provider.getBundleHost()
+				.getBundleFiles()
+				.stream()
+				.filter(ResourceFile::isDirectory)
+				.collect(Collectors.toList());
+
+		for (ResourceFile path : paths) {
+			File file = path.getFile(false);
 			File[] listFiles = file.listFiles();
 			if (listFiles == null) {
 				continue;
@@ -981,12 +1007,10 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 				String name = dirFile.getName();
 				if (name.startsWith("NewScript") || name.startsWith("Temp") ||
 					name.startsWith(myTestName)) {
-					dirFile.delete();
+					deleteFile(new ResourceFile(dirFile));
 				}
 			}
 		}
-
-		refreshProvider();
 	}
 
 	protected void closeScriptProvider() {
@@ -1021,7 +1045,7 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 		waitForSwing();
 
 		int waitCount = 0;
-		while (!flag.ended && waitCount < 201) {
+		while (!flag.ended && waitCount < 401) {
 			try {
 				Thread.sleep(DEFAULT_WAIT_DELAY);
 			}
@@ -1121,7 +1145,7 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	private boolean isReadOnly(ResourceFile script) {
 		assertNotNull(script);
-		return GhidraScriptUtil.isSystemScriptPath(script);
+		return GhidraScriptUtil.isSystemScript(script);
 	}
 
 	protected void assertSaveButtonDisabled() {
@@ -1141,19 +1165,23 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 	}
 
 	protected ResourceFile findScript(String name) {
-		ScriptInfo info = GhidraScriptUtil.getExistingScriptInfo(name);
+		ScriptInfo info = provider.getInfoManager().getExistingScriptInfo(name);
 		assertNotNull("Cannot find script by the given name: " + name, info);
 		return info.getSourceFile();
 	}
 
+	protected static String CANCELLABLE_SCRIPT_NAME = TestChangeProgramScript.class.getName();
+
 	protected void cancel() throws Exception {
-		Window window = waitForWindowByTitleContaining("TestScript");
+		Window window = waitForWindowByTitleContaining(CANCELLABLE_SCRIPT_NAME);
 		assertNotNull("Could not find script progress dialog", window);
 		pressButtonByText(window, "Cancel");
 	}
 
 	protected TestChangeProgramScript startCancellableScript() throws Exception {
 		TestChangeProgramScript script = new TestChangeProgramScript();
+		ResourceFile fakeFile = new ResourceFile(createTempFile(CANCELLABLE_SCRIPT_NAME, "java"));
+		script.setSourceFile(fakeFile);
 		runScript(script);
 
 		boolean success = script.waitForStart();
@@ -1178,7 +1206,7 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 		pressButtonByText(window, "No");
 		assertFalse(window.isShowing());
 
-		window = waitForWindowByTitleContaining("TestScript");
+		window = waitForWindowByTitleContaining(CANCELLABLE_SCRIPT_NAME);
 		assertNotNull("Could not find script progress dialog", window);
 
 		script.testOver();
@@ -1188,19 +1216,12 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 	}
 
 	protected void runScript(GhidraScript script) throws Exception {
-
-		deleteSimilarTempFiles("TestScript");
-
-		File tempFile = createTempFile("TestScript", "java");
-		tempFile.deleteOnExit();
-		ResourceFile fakeFile = new ResourceFile(tempFile);
-		Task task = new RunScriptTask(fakeFile, script, plugin.getCurrentState(), console);
+		Task task = new RunScriptTask(script, plugin.getCurrentState(), console);
 		task.addTaskListener(provider.getTaskListener());
 		new TaskLauncher(task, plugin.getTool().getToolFrame());
 	}
 
 	protected String runScriptAndGetOutput(ResourceFile scriptFile) throws Exception {
-
 		GhidraScriptProvider scriptProvider = GhidraScriptUtil.getProvider(scriptFile);
 		GhidraScript script =
 			scriptProvider.getScriptInstance(scriptFile, new PrintWriter(System.err));
@@ -1209,10 +1230,9 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 	}
 
 	protected String runScriptAndGetOutput(GhidraScript script) throws Exception {
-		ResourceFile fakeFile = new ResourceFile(createTempFile("TestScript", "java"));
 		SpyConsole spyConsole = installSpyConsole();
 
-		Task task = new RunScriptTask(fakeFile, script, plugin.getCurrentState(), spyConsole);
+		Task task = new RunScriptTask(script, plugin.getCurrentState(), spyConsole);
 		task.addTaskListener(provider.getTaskListener());
 
 		CountDownLatch latch = new CountDownLatch(1);
@@ -1480,7 +1500,8 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 
 	protected JTextComponent grabScriptEditorTextArea() {
 		GhidraScriptEditorComponentProvider scriptEditor = grabScriptEditor();
-		JTextArea textArea = (JTextArea) findComponentByName(scriptEditor.getComponent(), "EDITOR");
+		JTextArea textArea = (JTextArea) findComponentByName(scriptEditor.getComponent(),
+			GhidraScriptEditorComponentProvider.EDITOR_COMPONENT_NAME);
 		assertNotNull(textArea);
 		return textArea;
 	}
@@ -1582,9 +1603,9 @@ public abstract class AbstractGhidraScriptMgrPluginTest
 					}
 				}
 			}
-			catch (CancelledException ce) {
+			catch (CancelledException e) {
 				doneLatch.countDown();
-				throw ce;
+				throw e;
 			}
 
 			doneLatch.countDown();

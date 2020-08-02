@@ -18,6 +18,10 @@ package ghidra.app.plugin.core.processors;
 import static org.junit.Assert.*;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.swing.tree.TreePath;
 
 import org.junit.*;
 
@@ -28,7 +32,7 @@ import docking.widgets.OptionDialog;
 import docking.widgets.tree.GTree;
 import docking.widgets.tree.GTreeNode;
 import ghidra.framework.main.FrontEndTool;
-import ghidra.framework.main.datatree.DomainFileNode;
+import ghidra.framework.main.datatree.*;
 import ghidra.framework.model.DomainFile;
 import ghidra.framework.model.DomainFolder;
 import ghidra.plugin.importer.NewLanguagePanel;
@@ -98,8 +102,8 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 	@Test
 	public void testActionEnablement() throws Exception {
 		assertTrue(setLanguageAction.isEnabled());
-		assertTrue(!setLanguageAction.isEnabledForContext(createContext(xyzFolderNode)));
-		assertTrue(setLanguageAction.isEnabledForContext(createContext(notepadNode)));
+		assertTrue(!setLanguageAction.isEnabledForContext(createProjectDataContext(xyzFolderNode)));
+		assertTrue(setLanguageAction.isEnabledForContext(createProjectDataContext(notepadNode)));
 	}
 
 	private Address addr(String address) {
@@ -117,7 +121,7 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 
 		// this triggers a modal dialog
 		runSwing(() -> {
-			ActionContext context = createContext(notepadNode);
+			ActionContext context = createProjectDataContext(notepadNode);
 			assertTrue(setLanguageAction.isEnabledForContext(context));
 			setLanguageAction.actionPerformed(context);
 		}, false);
@@ -159,6 +163,22 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 
 			pressButtonByText(confirmDlg, "Save");
 		}
+	}
+
+	private ActionContext createProjectDataContext(GTreeNode node) {
+		TreePath[] selectionPaths = { node.getTreePath() };
+		
+		List<DomainFile> fileList = new ArrayList<>();
+		List<DomainFolder> folderList = new ArrayList<>();
+		if (node instanceof DomainFileNode) {
+			fileList.add(((DomainFileNode) node).getDomainFile());
+		}
+		else {
+			folderList.add(((DomainFolderNode)node).getDomainFolder());
+		}
+		
+		return new FrontEndProjectTreeContext(null, null, selectionPaths, folderList, fileList,
+			(DataTree) node.getTree(), true);
 	}
 
 	@Test
@@ -206,9 +226,9 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 			int txId = p.startTransaction("set Language");
 			addrFactory = p.getAddressFactory();
 			ProgramContext pc = p.getProgramContext();
-			Register ax = pc.getRegister("ax");
-			Register ebp = pc.getRegister("ebp");
-			Register ebx = pc.getRegister("ebx");
+			Register ax = pc.getRegister("AX");
+			Register ebp = pc.getRegister("EBP");
+			Register ebx = pc.getRegister("EBX");
 			pc.setValue(ax, addr("0x1001000"), addr("0x1001000"), BigInteger.valueOf(0x1234));
 			pc.setValue(ebp, addr("0x1001000"), addr("0x1001000"), BigInteger.valueOf(0x12345678));
 			pc.setValue(ebx, addr("0x1001000"), addr("0x1001000"), BigInteger.valueOf(0x12345678));
@@ -230,9 +250,9 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 		try {
 			addrFactory = p.getAddressFactory();
 			ProgramContext pc = p.getProgramContext();
-			Register ax = pc.getRegister("ax");
-			Register ebp = pc.getRegister("ebp");
-			Register ebx = pc.getRegister("ebx");
+			Register ax = pc.getRegister("AX");
+			Register ebp = pc.getRegister("EBP");
+			Register ebx = pc.getRegister("EBX");
 			assertEquals(0x1234, pc.getValue(ax, addr("0x1001000"), false).longValue());
 			assertEquals(0x12345678, pc.getValue(ebp, addr("0x1001000"), false).longValue());
 			assertEquals(0x12345678, pc.getValue(ebx, addr("0x1001000"), false).longValue());
@@ -248,9 +268,9 @@ public class SetLanguageTest extends AbstractGhidraHeadedIntegrationTest {
 		Program p = (Program) notepadFile.getDomainObject(this, false, false, TaskMonitor.DUMMY);
 		addrFactory = p.getAddressFactory();
 		ProgramContext pc = p.getProgramContext();
-		Register eax = pc.getRegister("eax");
-		Register esi = pc.getRegister("esi");
-		Register edi = pc.getRegister("edi");
+		Register eax = pc.getRegister("EAX");
+		Register esi = pc.getRegister("ESI");
+		Register edi = pc.getRegister("EDI");
 		try {
 			int txId = p.startTransaction("set Language");
 
