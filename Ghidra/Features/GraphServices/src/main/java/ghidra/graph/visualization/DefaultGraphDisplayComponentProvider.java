@@ -15,10 +15,14 @@
  */
 package ghidra.graph.visualization;
 
+import java.awt.event.MouseEvent;
+
 import javax.swing.JComponent;
 
+import docking.ActionContext;
 import ghidra.framework.plugintool.ComponentProviderAdapter;
 import ghidra.framework.plugintool.PluginTool;
+import ghidra.service.graph.GraphDisplay;
 import ghidra.util.HelpLocation;
 
 /**
@@ -52,7 +56,17 @@ public class DefaultGraphDisplayComponentProvider extends ComponentProviderAdapt
 
 	@Override
 	public void closeComponent() {
-		super.closeComponent();
-		display.close();
+		if (display != null) {
+			super.closeComponent();
+			// to prevent looping, null out display before callings its close method.
+			GraphDisplay closingDisplay = display;
+			display = null;
+			closingDisplay.close();
+		}
+	}
+
+	@Override
+	public ActionContext getActionContext(MouseEvent event) {
+		return display.getActionContext(event);
 	}
 }

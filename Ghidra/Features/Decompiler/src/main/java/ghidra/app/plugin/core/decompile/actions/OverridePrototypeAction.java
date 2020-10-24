@@ -22,14 +22,14 @@ import docking.widgets.OptionDialog;
 import ghidra.app.decompiler.*;
 import ghidra.app.plugin.core.decompile.DecompilerActionContext;
 import ghidra.app.plugin.core.function.EditFunctionSignatureDialog;
+import ghidra.app.util.HelpTopics;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.*;
 import ghidra.program.model.listing.*;
 import ghidra.program.model.pcode.*;
 import ghidra.program.model.symbol.Reference;
-import ghidra.util.Msg;
-import ghidra.util.UndefinedFunction;
+import ghidra.util.*;
 import ghidra.util.exception.CancelledException;
 
 public class OverridePrototypeAction extends AbstractDecompilerAction {
@@ -43,6 +43,7 @@ public class OverridePrototypeAction extends AbstractDecompilerAction {
 
 		public ProtoOverrideDialog(PluginTool tool, Function func, String signature, String conv) {
 			super(tool, "Override Signature", func);
+			setHelpLocation(new HelpLocation(HelpTopics.DECOMPILER, "ActionOverrideSignature"));
 			setSignature(signature);
 			setCallingConvention(conv);
 		}
@@ -83,6 +84,7 @@ public class OverridePrototypeAction extends AbstractDecompilerAction {
 
 	public OverridePrototypeAction() {
 		super("Override Signature");
+		setHelpLocation(new HelpLocation(HelpTopics.DECOMPILER, "ActionOverrideSignature"));
 		setPopupMenuData(new MenuData(new String[] { "Override Signature" }, "Decompile"));
 	}
 
@@ -112,8 +114,7 @@ public class OverridePrototypeAction extends AbstractDecompilerAction {
 		ClangNode parent = tokenAtCursor.Parent();
 		if (parent instanceof ClangStatement) {
 			PcodeOp op = ((ClangStatement) parent).getPcodeOp();
-			int opCode = op.getOpcode();
-			if (opCode == PcodeOp.CALL || opCode == PcodeOp.CALLIND) {
+			if (isCallOp(op)) {
 				return op;
 			}
 		}
@@ -141,13 +142,22 @@ public class OverridePrototypeAction extends AbstractDecompilerAction {
 		Iterator<PcodeOpAST> iter = hfunc.getPcodeOps(addr);
 		while (iter.hasNext()) {
 			PcodeOpAST op = iter.next();
-			int opCode = op.getOpcode();
-			if (opCode == PcodeOp.CALL || opCode == PcodeOp.CALLIND) {
+			if (isCallOp(op)) {
 				return op;
 			}
 		}
 
 		return null;
+	}
+
+	private static boolean isCallOp(PcodeOp op) {
+
+		if (op == null) {
+			return false;
+		}
+
+		int opCode = op.getOpcode();
+		return opCode == PcodeOp.CALL || opCode == PcodeOp.CALLIND;
 	}
 
 	private Function getCalledFunction(Program program, PcodeOp op) {
@@ -250,7 +260,6 @@ public class OverridePrototypeAction extends AbstractDecompilerAction {
 		String signature = generateSignature(op, name);
 		PluginTool tool = context.getTool();
 		ProtoOverrideDialog dialog = new ProtoOverrideDialog(tool, func, signature, conv);
-		//     dialog.setHelpLocation( new HelpLocation( getOwner(), "Edit_Function_Signature" ) );
 		tool.showDialog(dialog);
 		FunctionDefinition fdef = dialog.getFunctionDefinition();
 		if (fdef == null) {

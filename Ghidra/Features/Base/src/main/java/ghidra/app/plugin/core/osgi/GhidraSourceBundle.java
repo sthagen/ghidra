@@ -18,6 +18,8 @@ package ghidra.app.plugin.core.osgi;
 import static java.util.stream.Collectors.*;
 
 import java.io.*;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.Charset;
 import java.nio.file.*;
 import java.util.*;
@@ -711,6 +713,7 @@ public class GhidraSourceBundle extends GhidraBundle {
 			}
 		}
 		catch (Throwable e) {
+			Msg.error(this, "Exception searching ", e);
 			e.printStackTrace();
 		}
 	}
@@ -726,8 +729,8 @@ public class GhidraSourceBundle extends GhidraBundle {
 		final ResourceFileJavaFileManager resourceFileJavaManager = new ResourceFileJavaFileManager(
 			Collections.singletonList(getSourceDirectory()), buildErrors.keySet());
 
-		BundleJavaManager bundleJavaManager =
-			new BundleJavaManager(bundleHost.getHostFramework(), resourceFileJavaManager, options);
+		BundleJavaManager bundleJavaManager = new MyBundleJavaManager(bundleHost.getHostFramework(),
+			resourceFileJavaManager, options);
 
 		// The phidias BundleJavaManager is for compiling from within a bundle -- it makes the
 		// bundle dependencies available to the compiler classpath.  Here, we are compiling in an as-yet 
@@ -937,7 +940,7 @@ public class GhidraSourceBundle extends GhidraBundle {
 
 		try (StandardJavaFileManager javaFileManager =
 			compiler.getStandardFileManager(null, null, null);
-				BundleJavaManager bundleJavaManager = new BundleJavaManager(
+				BundleJavaManager bundleJavaManager = new MyBundleJavaManager(
 					bundleHost.getHostFramework(), javaFileManager, options);) {
 			Iterable<? extends JavaFileObject> sourceFiles =
 				javaFileManager.getJavaFileObjectsFromPaths(List.of(activatorSourceFileName));
@@ -1025,6 +1028,25 @@ public class GhidraSourceBundle extends GhidraBundle {
 		}
 	}
 
+	private static class MyBundleJavaManager extends BundleJavaManager {
+		static URL[] EMPTY_URL_ARRAY = new URL[0];
+
+		MyBundleJavaManager(Bundle bundle, JavaFileManager javaFileManager, List<String> options)
+				throws IOException {
+			super(bundle, javaFileManager, options);
+		}
+
+		/**
+		 * since the JavaCompiler tasks can close the class loader returned by this
+		 * method, make sure we're returning a copy.
+		 */
+		@Override
+		public ClassLoader getClassLoader() {
+			return new URLClassLoader(EMPTY_URL_ARRAY, super.getClassLoader());
+		}
+
+	}
+
 	private static class Summary {
 		static String SEPERATOR = ", ";
 		final StringWriter stringWriter = new StringWriter();
@@ -1069,46 +1091,51 @@ public class GhidraSourceBundle extends GhidraBundle {
 		 * @throws IOException if there's a problem listing files
 		 */
 		ClassMapper(Path directory) throws IOException {
-			if (Files.exists(directory)) {
-				try (Stream<Path> pathStream = Files.list(directory)) {
-					classToClassFilesMap = pathStream
-							.filter(f -> Files.isRegularFile(f) &&
-								f.getFileName().toString().endsWith(".class"))
-							.collect(groupingBy(f -> {
-								String fileName = f.getFileName().toString();
-								// if f is the class file of an inner class, use the class name
-								int money = fileName.indexOf('$');
-								if (money >= 0) {
-									return fileName.substring(0, money);
-								}
-								// drop ".class"
-								return fileName.substring(0, fileName.length() - 6);
-							}));
-				}
-			}
-			else {
+			if (!Files.exists(directory)) {
 				classToClassFilesMap = Collections.emptyMap();
+				return;
 			}
+
+			try (Stream<Path> paths = Files.list(directory)) {
+				classToClassFilesMap = paths
+						.filter(p -> Files.isRegularFile(p))
+						.filter(p -> p.getFileName().toString().endsWith(".class"))
+						.collect(groupingBy(this::getClassName));
+			}
+		}
+
+		private String getClassName(Path p) {
+			String fileName = p.getFileName().toString();
+			// if f is the class file of an inner class, use the class name
+			int money = fileName.indexOf('$');
+			if (money >= 0) {
+				return fileName.substring(0, money);
+			}
+			// drop ".class"
+			return fileName.substring(0, fileName.length() - 6);
 		}
 
 		List<Path> findAndRemove(ResourceFile sourceFile) {
 			String className = sourceFile.getName();
-			if (className.endsWith(".java")) {
-				className = className.substring(0, className.length() - 5);
-				long lastModifiedSource = sourceFile.lastModified();
-				List<Path> classFiles = classToClassFilesMap.remove(className);
-				if (classFiles == null) {
-					classFiles = Collections.emptyList();
-				}
-				long lastModifiedClassFile = classFiles.isEmpty() ? -1
-						: classFiles.stream()
-								.mapToLong(p -> p.toFile().lastModified())
-								.min()
-								.getAsLong();
-				// if source is newer than the oldest binary, report
-				if (lastModifiedSource > lastModifiedClassFile) {
-					return classFiles;
-				}
+			if (!className.endsWith(".java")) {
+				return null;
+			}
+
+			className = className.substring(0, className.length() - 5);
+			long lastModifiedSource = sourceFile.lastModified();
+			List<Path> classFiles = classToClassFilesMap.remove(className);
+			if (classFiles == null) {
+				classFiles = Collections.emptyList();
+			}
+
+			long lastModifiedClassFile = classFiles.isEmpty() ? -1
+					: classFiles.stream()
+							.mapToLong(p -> p.toFile().lastModified())
+							.min()
+							.getAsLong();
+			// if source is newer than the oldest binary, report
+			if (lastModifiedSource > lastModifiedClassFile) {
+				return classFiles;
 			}
 			return null;
 		}

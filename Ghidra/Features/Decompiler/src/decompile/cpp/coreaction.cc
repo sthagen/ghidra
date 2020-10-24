@@ -1077,6 +1077,8 @@ SymbolEntry *ActionConstantPtr::isPointer(AddrSpace *spc,Varnode *vn,PcodeOp *op
     // Make sure the constant is in the expected range for a pointer
     if (spc->getPointerLowerBound() > vn->getOffset())
       return (SymbolEntry *)0;
+    if (spc->getPointerUpperBound() < vn->getOffset())
+      return (SymbolEntry *)0;
     // Check if the constant looks like a single bit or mask
     if (bit_transitions(vn->getOffset(),vn->getSize()) < 3)
       return (SymbolEntry *)0;
@@ -1205,7 +1207,6 @@ int4 ActionDeindirect::apply(Funcdata &data)
 	    // We use isInputLocked as a test of whether the
 	    // function pointer prototype has been applied before
 	    fc->forceSet(data,*fp);
-	    data.updateOpFromSpec(fc);
 	    count += 1;
 	  }
 	}
@@ -2158,7 +2159,6 @@ int4 ActionDefaultParams::apply(Funcdata &data)
 	fc->setInternal(evalfp,data.getArch()->types->getTypeVoid());
     }
     fc->insertPcode(data);	// Insert any necessary pcode
-    data.updateOpFromSpec(fc);
   }
   return 0;			// Indicate success
 }
@@ -2288,6 +2288,16 @@ int4 ActionSetCasts::apply(Funcdata &data)
 	TypePointer *ct = (TypePointer *)op->getIn(0)->getHigh()->getType();
 	if ((ct->getMetatype() != TYPE_PTR)||(ct->getPtrTo()->getSize() != AddrSpace::addressToByteInt(sz, ct->getWordSize())))
 	  data.opUndoPtradd(op,true);
+      }
+      else if (opc == CPUI_PTRSUB) {	// Check for PTRSUB that no longer fits pointer
+	if (!op->getIn(0)->getHigh()->getType()->isPtrsubMatching(op->getIn(1)->getOffset())) {
+	  if (op->getIn(1)->getOffset() == 0) {
+	    data.opRemoveInput(op, 1);
+	    data.opSetOpcode(op, CPUI_COPY);
+	  }
+	  else
+	    data.opSetOpcode(op, CPUI_INT_ADD);
+	}
       }
       for(int4 i=0;i<op->numInput();++i) // Do input casts first, as output may depend on input
 	count += castInput(op,i,data,castStrategy);
@@ -4234,7 +4244,7 @@ Datatype *ActionInferTypes::propagateAddIn2Out(TypeFactory *typegrp,PcodeOp *op,
   int4 offset = propagateAddPointer(op,inslot);
   if (offset==-1) return op->getOut()->getTempType(); // Doesn't look like a good pointer add
   uintb uoffset = AddrSpace::addressToByte(offset,((TypePointer *)rettype)->getWordSize());
-  if (tstruct->getSize() > 0)
+  if (tstruct->getSize() > 0 && !tstruct->isVariableLength())
     uoffset = uoffset % tstruct->getSize();
   if (uoffset==0) {
     if (op->code() == CPUI_PTRSUB) // Go down at least one level
@@ -4409,7 +4419,7 @@ bool ActionInferTypes::propagateTypeEdge(TypeFactory *typegrp,PcodeOp *op,int4 i
     }
     else if (alttype->getMetatype()==TYPE_PTR) {
       newtype = ((TypePointer *)alttype)->getPtrTo();
-      if (newtype->getSize() != outvn->getTempType()->getSize()) // Size must be appropriate
+      if (newtype->getSize() != outvn->getTempType()->getSize() || newtype->isVariableLength()) // Size must be appropriate
 	newtype = outvn->getTempType();
     }
     else
@@ -4422,7 +4432,7 @@ bool ActionInferTypes::propagateTypeEdge(TypeFactory *typegrp,PcodeOp *op,int4 i
     }
     else if (alttype->getMetatype()==TYPE_PTR) {
       newtype = ((TypePointer *)alttype)->getPtrTo();
-      if (newtype->getSize() != outvn->getTempType()->getSize())
+      if (newtype->getSize() != outvn->getTempType()->getSize() || newtype->isVariableLength())
 	newtype = outvn->getTempType();
     }
     else
@@ -4738,6 +4748,7 @@ int4 ActionInferTypes::apply(Funcdata &data)
     }
     return 0;
   }
+  data.getScopeLocal()->applyTypeRecommendations();
   buildLocaltypes(data);	// Set up initial types (based on local info)
   for(iter=data.beginLoc();iter!=data.endLoc();++iter) {
     vn = *iter;
@@ -5007,6 +5018,7 @@ void ActionDatabase::universalAction(Architecture *conf)
 	actprop->addRule( new RulePiece2Zext("analysis") );
 	actprop->addRule( new RulePiece2Sext("analysis") );
 	actprop->addRule( new RulePopcountBoolXor("analysis") );
+	actprop->addRule( new RuleXorSwap("analysis") );
 	actprop->addRule( new RuleSubvarAnd("subvar") );
 	actprop->addRule( new RuleSubvarSubpiece("subvar") );
 	actprop->addRule( new RuleSplitFlow("subvar") );
