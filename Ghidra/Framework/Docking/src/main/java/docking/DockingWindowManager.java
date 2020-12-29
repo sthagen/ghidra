@@ -654,6 +654,9 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	 * @param provider the provider to be removed.
 	 */
 	public void removeComponent(ComponentProvider provider) {
+		if (provider == defaultProvider) {
+			defaultProvider = null;
+		}
 		placeholderManager.removeComponent(provider);
 	}
 
@@ -822,6 +825,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		setNextFocusPlaceholder(null);
 		removeInstance(this);
 		root = null;
+		lastActiveWindow = null;
 	}
 
 	void showComponent(ComponentProvider provider, boolean visibleState, boolean shouldEmphasize) {
@@ -931,17 +935,19 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 	 * @param rootXMLElement JDOM element from which to extract the state information.
 	 */
 	public void restoreFromXML(Element rootXMLElement) {
-		Element rootNodeElement = rootXMLElement.getChild(RootNode.ROOT_NODE_ELEMENT_NAME);
-		restoreWindowDataFromXml(rootNodeElement);
-		// load the tool preferences
+		restoreWindowDataFromXml(rootXMLElement);
 		restorePreferencesFromXML(rootXMLElement);
 	}
 
 	/**
 	 * Restore to the docking window manager the layout and positioning information from XML.
-	 * @param windowData The XML element containing the above information.
+	 * @param rootXMLElement JDOM element from which to extract the state information.
 	 */
-	public void restoreWindowDataFromXml(Element windowData) {
+	public void restoreWindowDataFromXml(Element rootXMLElement) {
+		Element windowData = rootXMLElement.getChild(RootNode.ROOT_NODE_ELEMENT_NAME);
+		if (windowData == null) {
+			return;
+		}
 		//
 		// Clear our focus history, as we are changing placeholders' providers, so the old focus
 		// is no longer relevant.
@@ -1378,6 +1384,10 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 			focusedPlaceholder.setSelected(false);
 		}
 
+		// Activating placeholders is done to help users find widgets hiding in plain sight. 
+		// Assume that the user is no longer seeking a provider if they are clicking around.
+		activatedInfo.clear();
+
 		focusedPlaceholder = placeholder;
 
 		// put the last focused placeholder at the front of the list for restoring focus work later
@@ -1576,7 +1586,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		return toolPreferencesElement;
 	}
 
-	private void restorePreferencesFromXML(Element rootElement) {
+	public void restorePreferencesFromXML(Element rootElement) {
 		Element toolPreferencesElement = rootElement.getChild(TOOL_PREFERENCES_XML_NAME);
 		if (toolPreferencesElement == null) {
 			return;
@@ -1756,7 +1766,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		 	This method seeks to accomplish 2 goals:
 		 		1) find a suitable component over which to center, and
 		 		2) ensure that the chosen component is in the parent hierarchy
-		
+
 		 */
 		Component bestComponent = centeredOnComponent;
 		if (SwingUtilities.isDescendingFrom(parent, bestComponent)) {
@@ -1790,7 +1800,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 
 		/*
 		 	Note: Which window should be the parent of the dialog when the user does not specify?
-		
+
 		 	Some use cases; a dialog is shown from:
 		 		1) A toolbar action
 		 		2) A component provider's code
@@ -1798,7 +1808,7 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		 		4) A background thread
 		 		5) The help window
 		 		6) A modal password dialog appears over the splash screen
-		
+
 		 	It seems like the parent should be the active window for 1-2.
 		 	Case 3 should probably use the window of the dialog provider.
 		 	Case 4 should probably use the main tool frame, since the user may be
@@ -1806,12 +1816,12 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		 	active window, we can default to the tool's frame.
 		 	Case 5 should use the help window.
 		 	Case 6 should use the splash screen as the parent.
-		
+
 		 	We have not yet solidified how we should parent.  This documentation is meant to
 		 	move us towards clarity as we find Use Cases that don't make sense.  (Once we
 		 	finalize our understanding, we should update the javadoc to list exactly where
 		 	the given Dialog Component will be shown.)
-		
+
 		 	Use Case
 		 		A -The user presses an action on a toolbar from a window on screen 1, while the
 		 		   main tool frame is on screen 2.  We want the popup window to appear on screen
@@ -1823,8 +1833,8 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 		 		 	-modal - Java handles this correctly, allowing the new dialog to be used
 		 		 	-non-modal - Java prevents the non-modal from being editing if not parented
 		 		 	             correctly
-		
-		
+
+
 		 	For now, the easiest mental model to use is to always prefer the active window so
 		 	that a dialog will appear in the user's view.  If we find a case where this is
 		 	not desired, then document it here.
@@ -2291,6 +2301,11 @@ public class DockingWindowManager implements PropertyChangeListener, Placeholder
 				this.lastActivatedPlaceholder = placeholder;
 			}
 			lastCalledTimestamp = System.currentTimeMillis();
+		}
+
+		void clear() {
+			lastActivatedPlaceholder = null;
+			lastCalledTimestamp = 0;
 		}
 	}
 }

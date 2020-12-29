@@ -41,7 +41,6 @@ public class DefaultGraphDisplayComponentProvider extends ComponentProviderAdapt
 		setIcon(DefaultDisplayGraphIcons.PROGRAM_GRAPH_ICON);
 		setTransient();
 		setWindowGroup(WINDOW_GROUP);
-		setSubTitle(Integer.toString(display.getId()));
 	}
 
 	@Override
@@ -68,5 +67,11 @@ public class DefaultGraphDisplayComponentProvider extends ComponentProviderAdapt
 	@Override
 	public ActionContext getActionContext(MouseEvent event) {
 		return display.getActionContext(event);
+	}
+
+	// overridden to make it accessible
+	@Override
+	public void removeAllLocalActions() {
+		super.removeAllLocalActions();
 	}
 }

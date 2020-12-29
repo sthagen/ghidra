@@ -142,7 +142,7 @@ public class PointerDataType extends BuiltIn implements Pointer {
 	}
 
 	@Override
-	public final DataType clone(DataTypeManager dtm) {
+	public final Pointer clone(DataTypeManager dtm) {
 		if (dtm == getDataTypeManager()) {
 			return this;
 		}
