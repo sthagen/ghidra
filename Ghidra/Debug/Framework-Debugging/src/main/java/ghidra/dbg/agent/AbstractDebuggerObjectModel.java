@@ -57,15 +57,15 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 				}
 				this.root = object;
 			}
+			CompletableFuture.runAsync(() -> {
+				synchronized (cbLock) {
+					cbCreationLog.put(object.getPath(), object);
+				}
+			}, clientExecutor).exceptionally(ex -> {
+				Msg.error(this, "Error updating objectCreated before callback");
+				return null;
+			});
 		}
-		CompletableFuture.runAsync(() -> {
-			synchronized (cbLock) {
-				cbCreationLog.put(object.getPath(), object);
-			}
-		}, clientExecutor).exceptionally(ex -> {
-			Msg.error(this, "Error updating objectCreated before callback");
-			return null;
-		});
 	}
 
 	protected void objectInvalidated(TargetObject object) {
@@ -76,20 +76,20 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 		assert root == this.root;
 		synchronized (lock) {
 			rootAdded = true;
+			root.getSchema()
+					.validateTypeAndInterfaces(root, null, null, root.enforcesStrictSchema());
+			CompletableFuture.runAsync(() -> {
+				synchronized (cbLock) {
+					cbRootAdded = true;
+				}
+				completedRoot.complete(root);
+			}, clientExecutor).exceptionally(ex -> {
+				Msg.error(this, "Error updating rootAdded before callback");
+				return null;
+			});
+			this.completedRoot.completeAsync(() -> root, clientExecutor);
+			listeners.fire.rootAdded(root);
 		}
-		root.getSchema()
-				.validateTypeAndInterfaces(root, null, null, root.enforcesStrictSchema());
-		CompletableFuture.runAsync(() -> {
-			synchronized (cbLock) {
-				cbRootAdded = true;
-			}
-			completedRoot.complete(root);
-		}, clientExecutor).exceptionally(ex -> {
-			Msg.error(this, "Error updating rootAdded before callback");
-			return null;
-		});
-		this.completedRoot.completeAsync(() -> root, clientExecutor);
-		listeners.fire.rootAdded(root);
 	}
 
 	@Override
@@ -146,7 +146,7 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 			}
 			if (!cbAttributes.isEmpty()) {
 				replayed(listener,
-					() -> listener.attributesChanged(object, List.of(), cbAttributes));
+					() -> listener.attributesChanged(object, List.of(), Map.copyOf(cbAttributes)));
 			}
 		}
 		Map<String, ? extends TargetObject> cbElements = object.getCallbackElements();
@@ -157,31 +157,34 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 			}
 			if (!cbElements.isEmpty()) {
 				replayed(listener,
-					() -> listener.elementsChanged(object, List.of(), cbElements));
+					() -> listener.elementsChanged(object, List.of(), Map.copyOf(cbElements)));
 			}
 		}
 	}
 
 	@Override
 	public void addModelListener(DebuggerModelListener listener, boolean replay) {
-		if (replay) {
-			synchronized (cbLock) {
+		synchronized (lock) {
+			if (replay) {
 				CompletableFuture.runAsync(() -> {
-					replayTreeEvents(listener);
-					listeners.add(listener);
+					synchronized (cbLock) {
+						replayTreeEvents(listener);
+						listeners.add(listener);
+					}
 				}, clientExecutor).exceptionally(ex -> {
 					listener.catastrophic(ex);
 					return null;
 				});
 			}
-		}
-		else {
-			listeners.add(listener);
+			else {
+				listeners.add(listener);
+			}
 		}
 	}
 
 	@Override
 	public void removeModelListener(DebuggerModelListener listener) {
+		// NB. Don't really care to lock here. Only making guarantees re/ adds,replays.
 		listeners.remove(listener);
 	}
 
@@ -202,14 +205,6 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 		return CompletableFuture.supplyAsync(() -> null, clientExecutor);
 	}
 
-	/*
-	@Override
-	public CompletableFuture<Void> flushEvents() {
-		return gateFuture(null);
-		//return CompletableFuture.supplyAsync(() -> gateFuture((Void) null)).thenCompose(f -> f);
-	}
-	*/
-
 	@Override
 	public CompletableFuture<Void> close() {
 		clientExecutor.shutdown();
@@ -218,7 +213,7 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 
 	public void removeExisting(List<String> path) {
 		TargetObject existing = getModelObject(path);
-		// It had better be. This also checks for null
+		// It's best if the implementation has already removed it, but just in case....
 		if (existing == null) {
 			return;
 		}
@@ -230,15 +225,27 @@ public abstract class AbstractDebuggerObjectModel implements SpiDebuggerObjectMo
 		if (!path.equals(existing.getPath())) {
 			return; // Is a link
 		}
-		if (parent instanceof DefaultTargetObject<?, ?>) { // It had better be
-			DefaultTargetObject<?, ?> dtoParent = (DefaultTargetObject<?, ?>) parent;
-			if (PathUtils.isIndex(path)) {
-				dtoParent.changeElements(List.of(PathUtils.getIndex(path)), List.of(), "Replaced");
-			}
-			else {
-				assert PathUtils.isName(path);
-				dtoParent.changeAttributes(List.of(PathUtils.getKey(path)), Map.of(), "Replaced");
-			}
+		if (!(parent instanceof SpiTargetObject)) { // It had better be
+			Msg.error(this, "Could not remove existing object " + existing +
+				", because parent is not an SpiTargetObject");
+			return;
+		}
+		SpiTargetObject spiParent = (SpiTargetObject) parent;
+		SpiTargetObject delegate = spiParent.getDelegate();
+		if (!(delegate instanceof DefaultTargetObject<?, ?>)) { // It had better be :)
+			Msg.error(this, "Could not remove existing object " + existing +
+				", because its parent's delegate is not a DefaultTargetObject");
+			return;
+		}
+		DefaultTargetObject<?, ?> dtoParent = (DefaultTargetObject<?, ?>) delegate;
+		if (PathUtils.isIndex(path)) {
+			dtoParent.changeElements(List.of(PathUtils.getIndex(path)), List.of(),
+				"Replaced");
+		}
+		else {
+			assert PathUtils.isName(path);
+			dtoParent.changeAttributes(List.of(PathUtils.getKey(path)), Map.of(),
+				"Replaced");
 		}
 	}
 

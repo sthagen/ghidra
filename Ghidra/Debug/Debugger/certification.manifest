@@ -4,8 +4,6 @@
 ##MODULE IP: Nuvola Icons - LGPL 2.1
 ##MODULE IP: Oxygen Icons - LGPL 3.0
 ##MODULE IP: Tango Icons - Public Domain
-.classpath||NONE||reviewed||END|
-.project||NONE||reviewed||END|
 Module.manifest||GHIDRA||||END|
 data/ExtensionPoint.manifest||GHIDRA||||END|
 src/main/help/help/TOC_Source.xml||GHIDRA||||END|
@@ -33,15 +31,20 @@ src/main/help/help/topics/DebuggerBreakpointsPlugin/DebuggerBreakpointsPlugin.ht
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/DebuggerBreakpointsPlugin.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-disable.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-enable.png||GHIDRA||||END|
+src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-ineffective-d.png||GHIDRA||||END|
+src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-ineffective-e.png||GHIDRA||||END|
+src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-mixed-de.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoint-mixed-ed.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoints-clear-all.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoints-disable-all.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoints-enable-all.png||GHIDRA||||END|
+src/main/help/help/topics/DebuggerBreakpointsPlugin/images/breakpoints-make-effective.png||GHIDRA||||END|
+src/main/help/help/topics/DebuggerConsolePlugin/DebuggerConsolePlugin.html||GHIDRA||||END|
+src/main/help/help/topics/DebuggerConsolePlugin/images/DebuggerConsolePlugin.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerInterpreterPlugin/DebuggerInterpreterPlugin.html||GHIDRA||||END|
 src/main/help/help/topics/DebuggerListingPlugin/DebuggerListingPlugin.html||GHIDRA||||END|
 src/main/help/help/topics/DebuggerListingPlugin/images/DebuggerGoToDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerListingPlugin/images/DebuggerListingPlugin.png||GHIDRA||||END|
-src/main/help/help/topics/DebuggerListingPlugin/images/DebuggerModuleImportDialog.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerMemviewPlugin/DebuggerMemviewPlugin.html||GHIDRA||||END|
 src/main/help/help/topics/DebuggerMemviewPlugin/images/DebuggerMemviewPlugin.png||GHIDRA||||END|
 src/main/help/help/topics/DebuggerMemviewPlugin/images/DebuggerMemviewPlugin_old.png||GHIDRA||||END|
@@ -114,7 +117,6 @@ src/main/help/help/topics/DebuggerTraceManagerServicePlugin/DebuggerTraceManager
 src/main/help/help/topics/DebuggerWatchesPlugin/DebuggerWatchesPlugin.html||GHIDRA||||END|
 src/main/help/help/topics/DebuggerWatchesPlugin/images/DebuggerWatchesPlugin.png||GHIDRA||||END|
 src/main/resources/defaultTools/Debugger.tool||GHIDRA||||END|
-src/main/resources/define_info_proc_mappings||GHIDRA||||END|
 src/main/resources/images/add.png||FAMFAMFAM Icons - CC 2.5|||famfamfam silk icon set|END|
 src/main/resources/images/attach.png||GHIDRA||||END|
 src/main/resources/images/autoread.png||GHIDRA||||END|
@@ -122,12 +124,15 @@ src/main/resources/images/blank.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-clear.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-disable.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-enable.png||GHIDRA||||END|
+src/main/resources/images/breakpoint-ineffective-d.png||GHIDRA||||END|
+src/main/resources/images/breakpoint-ineffective-e.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-mixed-de.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-mixed-ed.png||GHIDRA||||END|
 src/main/resources/images/breakpoint-set.png||GHIDRA||||END|
 src/main/resources/images/breakpoints-clear-all.png||GHIDRA||||END|
 src/main/resources/images/breakpoints-disable-all.png||GHIDRA||||END|
 src/main/resources/images/breakpoints-enable-all.png||GHIDRA||||END|
+src/main/resources/images/breakpoints-make-effective.png||GHIDRA||||END|
 src/main/resources/images/breakpoints.png||GHIDRA||||END|
 src/main/resources/images/closedFolder.png||Modified Nuvola Icons - LGPL 2.1||||END|
 src/main/resources/images/connect.png||GHIDRA||||END|
@@ -143,6 +148,7 @@ src/main/resources/images/launch.png||GHIDRA||||END|
 src/main/resources/images/modules.png||GHIDRA||||END|
 src/main/resources/images/object-populated.png||GHIDRA||||END|
 src/main/resources/images/object-running.png||GHIDRA||||END|
+src/main/resources/images/object-terminated.png||GHIDRA||||END|
 src/main/resources/images/object-unpopulated.png||GHIDRA||||END|
 src/main/resources/images/process.png||GHIDRA||||END|
 src/main/resources/images/record.png||GHIDRA||||END|
@@ -166,12 +172,15 @@ src/main/svg/blank.svg||GHIDRA||||END|
 src/main/svg/breakpoint-clear.svg||GHIDRA||||END|
 src/main/svg/breakpoint-disable.svg||GHIDRA||||END|
 src/main/svg/breakpoint-enable.svg||GHIDRA||||END|
+src/main/svg/breakpoint-ineffective-d.svg||GHIDRA||||END|
+src/main/svg/breakpoint-ineffective-e.svg||GHIDRA||||END|
 src/main/svg/breakpoint-mixed-de.svg||GHIDRA||||END|
 src/main/svg/breakpoint-mixed-ed.svg||GHIDRA||||END|
 src/main/svg/breakpoint-set.svg||GHIDRA||||END|
 src/main/svg/breakpoints-clear-all.svg||GHIDRA||||END|
 src/main/svg/breakpoints-disable-all.svg||GHIDRA||||END|
 src/main/svg/breakpoints-enable-all.svg||GHIDRA||||END|
+src/main/svg/breakpoints-make-effective.svg||GHIDRA||||END|
 src/main/svg/breakpoints.svg||GHIDRA||||END|
 src/main/svg/connect.svg||GHIDRA||||END|
 src/main/svg/console.svg||GHIDRA||||END|
@@ -182,6 +191,7 @@ src/main/svg/disconnect.svg||GHIDRA||||END|
 src/main/svg/kill.svg||GHIDRA||||END|
 src/main/svg/launch.svg||GHIDRA||||END|
 src/main/svg/memory.svg||GHIDRA||||END|
+src/main/svg/object-terminated.svg||GHIDRA||||END|
 src/main/svg/process.svg||GHIDRA||||END|
 src/main/svg/recording.svg||GHIDRA||||END|
 src/main/svg/register-marker.svg||GHIDRA||||END|

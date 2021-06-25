@@ -121,8 +121,9 @@ public class DbgModelTargetThreadImpl extends DbgModelTargetObjectImpl
 			STATE_ATTRIBUTE_NAME, targetState, //
 			TargetEnvironment.ARCH_ATTRIBUTE_NAME, executionType //
 		), reason.desc());
-		setExecutionState(targetState, reason.desc());
+		//setExecutionState(targetState, reason.desc());
 		registers.threadStateChangedSpecific(state, reason);
+		stack.threadStateChangedSpecific(state, reason);
 	}
 
 	@Override

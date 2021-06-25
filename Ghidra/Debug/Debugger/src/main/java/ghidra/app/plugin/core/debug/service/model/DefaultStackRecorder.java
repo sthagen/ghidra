@@ -16,7 +16,7 @@
 package ghidra.app.plugin.core.debug.service.model;
 
 import java.util.*;
-import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
 
 import ghidra.app.plugin.core.debug.mapping.DebuggerMemoryMapper;
 import ghidra.app.plugin.core.debug.service.model.interfaces.ManagedStackRecorder;
@@ -42,16 +42,12 @@ public class DefaultStackRecorder implements ManagedStackRecorder {
 	private final DefaultTraceRecorder recorder;
 	private final Trace trace;
 	private final TraceStackManager stackManager;
-	final PermanentTransactionExecutor tx;
 
 	public DefaultStackRecorder(TraceThread thread, DefaultTraceRecorder recorder) {
 		this.thread = thread;
 		this.recorder = recorder;
 		this.trace = recorder.getTrace();
 		this.stackManager = trace.getStackManager();
-		this.tx = new PermanentTransactionExecutor(trace,
-			"ModuleRecorder:" + recorder.target.getJoinedPath("."),
-			Executors::newSingleThreadExecutor, 100);
 	}
 
 	@Override
@@ -62,23 +58,30 @@ public class DefaultStackRecorder implements ManagedStackRecorder {
 	@Override
 	public void recordStack() {
 		long snap = recorder.getSnap();
-		tx.execute("Stack changed", () -> {
+		DebuggerMemoryMapper mm = recorder.getMemoryMapper();
+		Map<Integer, Address> pcsByLevel;
+		synchronized (stack) {
+			pcsByLevel = stack.entrySet()
+					.stream()
+					.collect(Collectors.toMap(e -> e.getKey(), e -> {
+						return mm.targetToTrace(e.getValue().getProgramCounter());
+					}));
+		}
+		recorder.parTx.execute("Stack changed", () -> {
 			TraceStack traceStack = stackManager.getStack(thread, snap, true);
 			traceStack.setDepth(stackDepth(), false);
-			for (Map.Entry<Integer, TargetStackFrame> ent : stack.entrySet()) {
-				Address tracePc =
-					recorder.getMemoryMapper().targetToTrace(ent.getValue().getProgramCounter());
-				doRecordFrame(traceStack, ent.getKey(), tracePc);
+			for (Map.Entry<Integer, Address> ent : pcsByLevel.entrySet()) {
+				doRecordFrame(traceStack, ent.getKey(), ent.getValue());
 			}
-		});
+		}, thread.getPath());
 	}
 
 	public void popStack() {
 		long snap = recorder.getSnap();
-		tx.execute("Stack popped", () -> {
+		recorder.parTx.execute("Stack popped", () -> {
 			TraceStack traceStack = stackManager.getStack(thread, snap, true);
 			traceStack.setDepth(stackDepth(), false);
-		});
+		}, thread.getPath());
 	}
 
 	public void doRecordFrame(TraceStack traceStack, int frameLevel, Address pc) {
@@ -87,58 +90,65 @@ public class DefaultStackRecorder implements ManagedStackRecorder {
 	}
 
 	public void recordFrame(TargetStackFrame frame) {
-		stack.put(getFrameLevel(frame), frame);
-		tx.execute("Stack frame added", () -> {
+		long snap = recorder.getSnap();
+		synchronized (stack) {
+			stack.put(getFrameLevel(frame), frame);
+		}
+		recorder.parTx.execute("Stack frame added", () -> {
 			DebuggerMemoryMapper memoryMapper = recorder.getMemoryMapper();
 			if (memoryMapper == null) {
 				return;
 			}
 			Address pc = frame.getProgramCounter();
 			Address tracePc = pc == null ? null : memoryMapper.targetToTrace(pc);
-			TraceStack traceStack = stackManager.getStack(thread, recorder.getSnap(), true);
+			TraceStack traceStack = stackManager.getStack(thread, snap, true);
 			doRecordFrame(traceStack, getFrameLevel(frame), tracePc);
-		});
+		}, thread.getPath());
 	}
 
 	protected int stackDepth() {
-		return stack.isEmpty() ? 0 : stack.lastKey() + 1;
+		synchronized (stack) {
+			return stack.isEmpty() ? 0 : stack.lastKey() + 1;
+		}
 	}
 
 	@Override
 	public int getSuccessorFrameLevel(TargetObject successor) {
-		NavigableSet<Integer> observedPathLengths = new TreeSet<>();
-		for (TargetStackFrame frame : stack.values()) {
-			observedPathLengths.add(frame.getPath().size());
-		}
-		List<String> path = successor.getPath();
-		for (int l : observedPathLengths.descendingSet()) {
-			if (l > path.size()) {
-				continue;
+		for (TargetObject p = successor; p != null; p = p.getParent()) {
+			if (p instanceof TargetStackFrame) {
+				if (!PathUtils.isIndex(p.getPath())) {
+					return 0;
+				}
+				int index = Integer.decode(p.getIndex());
+				TargetStackFrame frame;
+				synchronized (stack) {
+					frame = stack.get(index);
+				}
+				if (!Objects.equals(p, frame)) {
+					return 0;
+				}
+				return index;
 			}
-			List<String> sub = path.subList(0, l);
-			if (!PathUtils.isIndex(sub)) {
-				continue;
-			}
-			int index = Integer.decode(PathUtils.getIndex(sub));
-			TargetStackFrame frame = stack.get(index);
-			if (frame == null || !Objects.equals(sub, frame.getPath())) {
-				continue;
-			}
-			return index;
 		}
 		return 0;
 	}
 
 	protected boolean checkStackFrameRemoved(TargetObject invalid) {
-		if (stack.values().remove(invalid)) {
-			popStack();
-			return true;
+		boolean removed;
+		synchronized (stack) {
+			removed = stack.values().remove(invalid);
 		}
-		return false;
+		if (removed) {
+			popStack();
+		}
+		return removed;
 	}
 
 	public Address pcFromStack() {
-		TargetStackFrame frame = stack.get(0);
+		TargetStackFrame frame;
+		synchronized (stack) {
+			frame = stack.get(0);
+		}
 		if (frame == null) {
 			return null;
 		}
@@ -156,7 +166,9 @@ public class DefaultStackRecorder implements ManagedStackRecorder {
 
 	@Override
 	public TargetStackFrame getTargetStackFrame(int frameLevel) {
-		return stack.get(frameLevel);
+		synchronized (stack) {
+			return stack.get(frameLevel);
+		}
 	}
 
 }

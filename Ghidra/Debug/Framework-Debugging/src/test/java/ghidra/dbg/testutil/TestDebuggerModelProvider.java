@@ -23,6 +23,9 @@ import ghidra.dbg.target.TargetObject;
 
 public interface TestDebuggerModelProvider {
 	interface ModelHost extends AutoCloseable {
+		interface WithoutThreadValidation extends AutoCloseable {
+		}
+
 		Map<String, Object> getFactoryOptions();
 
 		ModelHost build() throws Throwable;
@@ -39,6 +42,8 @@ public interface TestDebuggerModelProvider {
 
 		boolean hasDetachableProcesses();
 
+		boolean hasInterpreter();
+
 		boolean hasInterruptibleProcesses();
 
 		boolean hasKillableProcesses();
@@ -54,6 +59,8 @@ public interface TestDebuggerModelProvider {
 		boolean hasLauncher();
 
 		boolean hasProcessContainer();
+
+		WithoutThreadValidation withoutThreadValidation();
 
 		<T extends TargetObject> T find(Class<T> cls, List<String> seedPath) throws Throwable;
 

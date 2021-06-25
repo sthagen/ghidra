@@ -21,8 +21,7 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.Before;
 import org.junit.Test;
 
-import ghidra.app.plugin.core.debug.service.model.DebuggerModelServiceInternal;
-import ghidra.app.plugin.core.debug.service.model.DebuggerModelServiceProxyPlugin;
+import ghidra.app.plugin.core.debug.service.model.*;
 import ghidra.dbg.DebuggerModelFactory;
 import ghidra.dbg.DebuggerObjectModel;
 import ghidra.dbg.agent.AbstractDebuggerObjectModel;
@@ -97,9 +96,9 @@ public class DebuggerTargetsPluginScreenShots extends GhidraScreenShotGenerator 
 	@Test
 	public void testCaptureDebuggerTargetsPlugin() throws Throwable {
 		modelService.addModel(
-			new ScreenShotDebuggerObjectModel("Demo connection to 'localhost:12345'"));
+			new ScreenShotDebuggerObjectModel("DEMO@1234abcd localhost:12345"));
 		modelService.addModel(
-			new ScreenShotDebuggerObjectModel("Demo connection to 'debug-demo:12345'"));
+			new ScreenShotDebuggerObjectModel("DEMO@4321fedc debug-demo:12345"));
 
 		captureIsolatedProvider(targetsProvider, 400, 300);
 	}

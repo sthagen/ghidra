@@ -21,7 +21,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
-import agent.dbgeng.manager.*;
+import agent.dbgeng.manager.DbgThread;
 import agent.dbgeng.manager.impl.*;
 import ghidra.async.AsyncUtils;
 import ghidra.async.TypeSpec;
@@ -36,13 +36,13 @@ public interface DbgModelTargetRegisterBank extends DbgModelTargetObject, Target
 
 	public DbgModelTargetRegister getTargetRegister(DbgRegister register);
 
-	public default void threadStateChangedSpecific(DbgState state, DbgReason reason) {
-		readRegistersNamed(getCachedElements().keySet());
-	}
-
-	// NB: Does anyone call this anymore?
 	@Override
 	public default CompletableFuture<? extends Map<String, byte[]>> readRegistersNamed(
+			Collection<String> names) {
+		return getModel().gateFuture(doReadRegistersNamed(names));
+	}
+
+	public default CompletableFuture<? extends Map<String, byte[]>> doReadRegistersNamed(
 			Collection<String> names) {
 		DbgManagerImpl manager = getManager();
 		if (manager.isWaiting()) {
@@ -101,6 +101,10 @@ public interface DbgModelTargetRegisterBank extends DbgModelTargetObject, Target
 
 	@Override
 	public default CompletableFuture<Void> writeRegistersNamed(Map<String, byte[]> values) {
+		return getModel().gateFuture(doWriteRegistersNamed(values));
+	}
+
+	public default CompletableFuture<Void> doWriteRegistersNamed(Map<String, byte[]> values) {
 		DbgThread thread = getParentThread().getThread();
 		return AsyncUtils.sequence(TypeSpec.VOID).then(seq -> {
 			requestNativeElements().handle(seq::nextIgnore);

@@ -45,6 +45,11 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 	}
 
 	@Override
+	public String toString() {
+		return String.format("<%s trace=%s>", getClass().getSimpleName(), breaks);
+	}
+
+	@Override
 	public boolean isEmpty() {
 		return breaks.isEmpty();
 	}
@@ -125,12 +130,12 @@ public class LoneLogicalBreakpoint implements LogicalBreakpointInternal {
 		if (trace != breaks.getTrace()) {
 			return Enablement.NONE;
 		}
-		return breaks.computeEnablement();
+		return ProgramEnablement.NONE.combineTrace(breaks.computeEnablement());
 	}
 
 	@Override
 	public Enablement computeEnablement() {
-		return breaks.computeEnablement();
+		return ProgramEnablement.NONE.combineTrace(breaks.computeEnablement());
 	}
 
 	@Override

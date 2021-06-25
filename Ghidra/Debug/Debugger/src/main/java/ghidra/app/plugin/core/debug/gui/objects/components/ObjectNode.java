@@ -37,6 +37,8 @@ public class ObjectNode extends GTreeSlowLoadingNode {  //extends GTreeNode
 		ResourceManager.loadImage("images/object-populated.png");
 	static final ImageIcon ICON_EMPTY = ResourceManager.loadImage("images/object-unpopulated.png");
 	static final ImageIcon ICON_RUNNING = ResourceManager.loadImage("images/object-running.png");
+	static final ImageIcon ICON_TERMINATED =
+		ResourceManager.loadImage("images/object-terminated.png");
 	static final ImageIcon ICON_EVENT = ResourceManager.loadImage("images/register-marker.png");
 
 	private ObjectContainer container;
@@ -57,7 +59,9 @@ public class ObjectNode extends GTreeSlowLoadingNode {  //extends GTreeNode
 	public void setContainer(ObjectTree tree, ObjectContainer parent, ObjectContainer container) {
 		this.container = container;
 		name = container.getName();
-		tree.addToMap(parent, container, this);
+		if (parent != null) {
+			tree.addToMap(parent, container, this);
+		}
 		//fireNodeStructureChanged(this);
 	}
 
@@ -141,6 +145,9 @@ public class ObjectNode extends GTreeSlowLoadingNode {  //extends GTreeNode
 			TargetExecutionStateful stateful = (TargetExecutionStateful) targetObject;
 			if (stateful.getExecutionState().equals(TargetExecutionState.RUNNING)) {
 				return ICON_RUNNING;
+			}
+			if (stateful.getExecutionState().equals(TargetExecutionState.TERMINATED)) {
+				return ICON_TERMINATED;
 			}
 		}
 		/*

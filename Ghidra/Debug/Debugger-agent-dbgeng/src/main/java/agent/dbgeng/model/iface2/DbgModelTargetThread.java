@@ -55,8 +55,6 @@ public interface DbgModelTargetThread extends //
 		}
 	}
 
-	public void threadStateChangedSpecific(DbgState state, DbgReason reason);
-
 	@Override
 	public default CompletableFuture<Void> setActive() {
 		DbgManagerImpl manager = getManager();
@@ -67,5 +65,7 @@ public interface DbgModelTargetThread extends //
 	public DbgModelTargetStackImpl getStack();
 
 	public String getExecutingProcessorType();
+
+	public void threadStateChangedSpecific(DbgState state, DbgReason reason);
 
 }

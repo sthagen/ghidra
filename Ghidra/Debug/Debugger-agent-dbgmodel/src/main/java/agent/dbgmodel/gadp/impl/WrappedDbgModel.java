@@ -580,7 +580,11 @@ public class WrappedDbgModel
 
 	@Override
 	public void setCurrentThreadId(DebugThreadId dti) {
-		client.getSystemObjects().setCurrentThreadId(dti);
+		DebugSystemObjects so = client.getSystemObjects();
+		DebugThreadId currentThreadId = so.getCurrentThreadId();
+		if (dti.id != currentThreadId.id) {
+			so.setCurrentThreadId(dti);
+		}
 		/*
 		if (USE_CLIENT) {
 			System.err.println("setCurrentThread");
@@ -969,6 +973,16 @@ public class WrappedDbgModel
 			return DebugValueType.INT64;
 		}
 		return DebugValueType.INVALID;
+	}
+
+	@Override
+	public int getCurrentScopeFrameIndex() {
+		return client.getSymbols().getCurrentScopeFrameIndex();
+	}
+
+	@Override
+	public void setCurrentScopeFrameIndex(int index) {
+		client.getSymbols().setCurrentScopeFrameIndex(index);
 	}
 
 }

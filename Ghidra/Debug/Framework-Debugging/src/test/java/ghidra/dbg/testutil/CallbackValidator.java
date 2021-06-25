@@ -43,11 +43,21 @@ import ghidra.util.NumericUtilities;
 
 public class CallbackValidator implements DebuggerModelListener, AutoCloseable {
 
+	protected static class CreationRecord {
+		private final TargetObject object;
+		private final Throwable stack;
+
+		public CreationRecord(TargetObject object) {
+			this.object = object;
+			this.stack = new Throwable("Existing object created here");
+		}
+	}
+
 	public CatchOffThread off = new CatchOffThread();
 
 	public final DebuggerObjectModel model;
 	public Thread thread = null;
-	public Set<TargetObject> valid = new HashSet<>();
+	public Map<TargetObject, CreationRecord> valid = new HashMap<>();
 
 	// Knobs
 	// TODO: Make these methods instead?
@@ -85,12 +95,8 @@ public class CallbackValidator implements DebuggerModelListener, AutoCloseable {
 			thread = Thread.currentThread();
 		}
 		if (requireSameThread) {
-			if (thread != Thread.currentThread()) {
-				throw new AssertionError("Completion came from an unexpected thread expected:" +
-					thread + " but got " + Thread.currentThread());
-			}
-			assertEquals("Completion came from an unexpected thread", thread,
-				Thread.currentThread());
+			assertEquals("Completion came from an unexpected thread. Probably forgot gateFuture()",
+				thread, Thread.currentThread());
 		}
 	}
 
@@ -113,14 +119,14 @@ public class CallbackValidator implements DebuggerModelListener, AutoCloseable {
 	public void validateObjectValid(String callback, TargetObject obj) {
 		if (requireValid) {
 			assertTrue("Object " + obj.getJoinedPath(".") + " invalid during callback " + callback,
-				valid.contains(obj));
+				valid.containsKey(obj));
 		}
 	}
 
 	public void validateObjectInvalid(String callback, TargetObject obj) {
 		if (requireValid) {
 			assertFalse("Object " + obj.getJoinedPath(".") + " valid during callback " + callback +
-				", but should have been invalid", valid.contains(obj));
+				", but should have been invalid", valid.containsKey(obj));
 		}
 	}
 
@@ -260,8 +266,19 @@ public class CallbackValidator implements DebuggerModelListener, AutoCloseable {
 		if (log) {
 			Msg.info(this, "created(object=" + object + ")");
 		}
-		valid.add(object);
+		CreationRecord record = new CreationRecord(object);
+		CreationRecord exists = valid.put(object, record);
 		off.catching(() -> {
+			if (exists != null) {
+				Msg.error(this, "Original creation: ", exists.stack);
+				Msg.error(this, "New creation: ", record.stack);
+				if (exists.object == object) {
+					fail("created twice (same object): " + object.getJoinedPath("."));
+				}
+				else {
+					fail("replaced before invalidation. old=" + exists.object + ", new=" + object);
+				}
+			}
 			validateCallbackThread("created");
 			validateObject("created", object);
 		});

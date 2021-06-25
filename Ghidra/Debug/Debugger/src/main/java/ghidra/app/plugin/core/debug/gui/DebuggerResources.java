@@ -18,7 +18,9 @@ package ghidra.app.plugin.core.debug.gui;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.event.*;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.function.Function;
 
 import javax.swing.*;
@@ -30,6 +32,7 @@ import docking.widgets.table.*;
 import docking.widgets.tree.GTreeNode;
 import ghidra.app.plugin.core.debug.DebuggerPluginPackage;
 import ghidra.app.plugin.core.debug.gui.breakpoint.DebuggerBreakpointsPlugin;
+import ghidra.app.plugin.core.debug.gui.console.DebuggerConsolePlugin;
 import ghidra.app.plugin.core.debug.gui.listing.DebuggerListingPlugin;
 import ghidra.app.plugin.core.debug.gui.memory.DebuggerRegionsPlugin;
 import ghidra.app.plugin.core.debug.gui.modules.DebuggerModulesPlugin;
@@ -42,13 +45,16 @@ import ghidra.app.plugin.core.debug.gui.target.DebuggerTargetsPlugin;
 import ghidra.app.plugin.core.debug.gui.thread.DebuggerThreadsPlugin;
 import ghidra.app.plugin.core.debug.gui.time.DebuggerTimePlugin;
 import ghidra.app.plugin.core.debug.gui.watch.DebuggerWatchesPlugin;
+import ghidra.app.plugin.core.debug.service.model.launch.DebuggerProgramLaunchOffer;
 import ghidra.app.services.DebuggerTraceManagerService.BooleanChangeAdapter;
 import ghidra.app.services.MarkerService;
+import ghidra.async.AsyncUtils;
 import ghidra.framework.plugintool.Plugin;
 import ghidra.framework.plugintool.util.PluginUtils;
 import ghidra.program.database.ProgramContentHandler;
 import ghidra.trace.model.Trace;
 import ghidra.util.*;
+import ghidra.util.exception.CancelledException;
 import resources.MultiIcon;
 import resources.ResourceManager;
 import resources.icons.RotateIcon;
@@ -93,6 +99,8 @@ public interface DebuggerResources {
 		ResourceManager.loadImage("images/breakpoints-disable-all.png");
 	ImageIcon ICON_CLEAR_ALL_BREAKPOINTS =
 		ResourceManager.loadImage("images/breakpoints-clear-all.png");
+	ImageIcon ICON_MAKE_BREAKPOINTS_EFFECTIVE =
+		ResourceManager.loadImage("images/breakpoints-make-effective.png");
 
 	// TODO: Some overlay to indicate dynamic, or new icon altogether
 	ImageIcon ICON_LISTING = ResourceManager.loadImage("images/Browser.gif");
@@ -113,6 +121,7 @@ public interface DebuggerResources {
 	ImageIcon ICON_CLOSE = ResourceManager.loadImage("images/x.gif");
 	ImageIcon ICON_ADD = ResourceManager.loadImage("images/add.png");
 	ImageIcon ICON_DELETE = ResourceManager.loadImage("images/delete.png");
+	ImageIcon ICON_CLEAR = ResourceManager.loadImage("images/erase16.png");
 	ImageIcon ICON_REFRESH = ResourceManager.loadImage("images/view-refresh.png");
 	ImageIcon ICON_FILTER = ResourceManager.loadImage("images/filter_off.png"); // Eww.
 	ImageIcon ICON_SELECT_ROWS = ResourceManager.loadImage("images/table_go.png");
@@ -123,7 +132,7 @@ public interface DebuggerResources {
 	//ResourceManager.loadImage("images/capture-memory.png");
 
 	// TODO: Draw an icon
-	ImageIcon ICON_MAP_MODULES = ResourceManager.loadImage("images/map-modules.png");
+	ImageIcon ICON_MAP_MODULES = ResourceManager.loadImage("images/modules.png");
 	ImageIcon ICON_MAP_SECTIONS = ICON_MAP_MODULES; // TODO
 	ImageIcon ICON_BLOCK = ICON_MAP_SECTIONS; // TODO
 	// TODO: Draw an icon
@@ -132,6 +141,10 @@ public interface DebuggerResources {
 	ImageIcon ICON_DATA_TYPES = ResourceManager.loadImage("images/dataTypes.png");
 	// TODO: Draw an icon?
 	ImageIcon ICON_CAPTURE_SYMBOLS = ResourceManager.loadImage("images/closedFolderLabels.png");
+
+	ImageIcon ICON_LOG_FATAL = ResourceManager.loadImage("images/edit-bomg.png");
+	ImageIcon ICON_LOG_ERROR = ResourceManager.loadImage("images/dialog-warning_red.png");
+	ImageIcon ICON_LOG_WARN = ResourceManager.loadImage("images/dialog-warning.png");
 
 	ImageIcon ICON_SYNC = ResourceManager.loadImage("images/sync_enabled.png");
 	ImageIcon ICON_VISIBILITY = ResourceManager.loadImage("images/format-text-bold.png");
@@ -150,6 +163,11 @@ public interface DebuggerResources {
 	ImageIcon ICON_PROVIDER_BREAKPOINTS = ICON_BREAKPOINTS;
 	HelpLocation HELP_PROVIDER_BREAKPOINTS = new HelpLocation(
 		PluginUtils.getPluginNameFromClass(DebuggerBreakpointsPlugin.class), HELP_ANCHOR_PLUGIN);
+
+	String TITLE_PROVIDER_CONSOLE = "Debug Console";
+	ImageIcon ICON_PROVIDER_CONSOLE = ICON_CONSOLE;
+	HelpLocation HELP_PROVIDER_CONSOLE = new HelpLocation(
+		PluginUtils.getPluginNameFromClass(DebuggerConsolePlugin.class), HELP_ANCHOR_PLUGIN);
 
 	String TITLE_PROVIDER_LISTING = "Dynamic";
 	ImageIcon ICON_PROVIDER_LISTING = ICON_LISTING;
@@ -251,10 +269,14 @@ public interface DebuggerResources {
 
 	String MARKER_NAME_BREAKPOINT_ENABLED = "Enabled Breakpoint";
 	String MARKER_NAME_BREAKPOINT_DISABLED = "Disabled Breakpoint";
+	String MARKER_NAME_BREAKPOINT_INEFFECTIVE_E = "Ineffective Enabled Breakpoint";
+	String MARKER_NAME_BREAKPOINT_INEFFECTIVE_D = "Ineffective Disabled Breakpoint";
 	String MARKER_NAME_BREAKPOINT_MIXED_ED = "Mixed Enabled-Disabled Breakpont";
 	String MARKER_NAME_BREAKPOINT_MIXED_DE = "Mixed Disabled-Enabled Breakpont";
 	int PRIORITY_BREAKPOINT_ENABLED_MARKER = MarkerService.BREAKPOINT_PRIORITY;
 	int PRIORITY_BREAKPOINT_DISABLED_MARKER = MarkerService.BREAKPOINT_PRIORITY;
+	int PRIORITY_BREAKPOINT_INEFFECTIVE_E_MARKER = MarkerService.BREAKPOINT_PRIORITY;
+	int PRIORITY_BREAKPOINT_INEFFECTIVE_D_MARKER = MarkerService.BREAKPOINT_PRIORITY;
 	int PRIORITY_BREAKPOINT_MIXED_ED_MARKER = MarkerService.BREAKPOINT_PRIORITY;
 	int PRIORITY_BREAKPOINT_MIXED_DE_MARKER = MarkerService.BREAKPOINT_PRIORITY;
 	ImageIcon ICON_BREAKPOINT_ENABLED_MARKER = ICON_ENABLE_BREAKPOINT;
@@ -263,6 +285,10 @@ public interface DebuggerResources {
 		ResourceManager.loadImage("images/breakpoint-mixed-ed.png");
 	ImageIcon ICON_BREAKPOINT_MIXED_DE_MARKER =
 		ResourceManager.loadImage("images/breakpoint-mixed-de.png");
+	ImageIcon ICON_BREAKPOINT_INEFFECTIVE_E_MARKER =
+		ResourceManager.loadImage("images/breakpoint-ineffective-e.png");
+	ImageIcon ICON_BREAKPOINT_INEFFECTIVE_D_MARKER =
+		ResourceManager.loadImage("images/breakpoint-ineffective-d.png");
 
 	Icon ICON_UNIQUE_REF_READ =
 		new RotateIcon(ResourceManager.loadImage("images/cursor_arrow.gif"), 180); // TODO
@@ -273,6 +299,13 @@ public interface DebuggerResources {
 	Color DEFAULT_COLOR_ENABLED_BREAKPOINT_MARKERS = new Color(0.875f, 0.75f, 0.75f);
 	String OPTION_NAME_COLORS_DISABLED_BREAKPOINT_MARKERS = "Colors.Disabled Breakpoint Markers";
 	Color DEFAULT_COLOR_DISABLED_BREAKPOINT_MARKERS = DEFAULT_COLOR_ENABLED_BREAKPOINT_MARKERS;
+	String OPTION_NAME_COLORS_INEFFECTIVE_E_BREAKPOINT_MARKERS =
+		"Colors.Ineffective Enabled Breakpoint Markers";
+	Color DEFAULT_COLOR_INEFFECTIVE_E_BREAKPOINT_MARKERS = new Color(0.75f, 0.75f, 0.75f);
+	String OPTION_NAME_COLORS_INEFFECTIVE_D_BREAKPOINT_MARKERS =
+		"Colors.Ineffective Disabled Breakpoint Markers";
+	Color DEFAULT_COLOR_INEFFECTIVE_D_BREAKPOINT_MARKERS =
+		DEFAULT_COLOR_INEFFECTIVE_E_BREAKPOINT_MARKERS;
 
 	String OPTION_NAME_COLORS_ENABLED_BREAKPOINT_COLORING_BACKGROUND =
 		"Colors.Enabled Breakpoint Markers Have Background";
@@ -281,6 +314,17 @@ public interface DebuggerResources {
 	String OPTION_NAME_COLORS_DISABLED_BREAKPOINT_COLORING_BACKGROUND =
 		"Colors.Disabled Breakpoint Markers Have Background";
 	boolean DEFAULT_COLOR_DISABLED_BREAKPOINT_COLORING_BACKGROUND = false;
+
+	String OPTION_NAME_COLORS_INEFFECTIVE_E_BREAKPOINT_COLORING_BACKGROUND =
+		"Colors.Ineffective Enabled Breakpoint Markers Have Background";
+	boolean DEFAULT_COLOR_INEFFECTIVE_E_BREAKPOINT_COLORING_BACKGROUND = true;
+
+	String OPTION_NAME_COLORS_INEFFECTIVE_D_BREAKPOINT_COLORING_BACKGROUND =
+		"Colors.Ineffective Disabled Breakpoint Markers Have Background";
+	boolean DEFAULT_COLOR_INEFFECTIVE_D_BREAKPOINT_COLORING_BACKGROUND = false;
+
+	String OPTION_NAME_LOG_BUFFER_LIMIT = "Log Buffer Size";
+	int DEFAULT_LOG_BUFFER_LIMIT = 100;
 
 	// TODO: Re-assign/name groups
 	String GROUP_GENERAL = "Dbg1. General";
@@ -403,17 +447,24 @@ public interface DebuggerResources {
 
 	interface DebugProgramAction {
 		String NAME = "Debug Program";
-		String DESCRIPTION_PREFIX = "Debug ";
 		Icon ICON = ICON_DEBUGGER;
 		String GROUP = GROUP_GENERAL;
 		String HELP_ANCHOR = "debug_program";
 
-		static ActionBuilder builder(Plugin owner, Plugin helpOwner) {
-			return new ActionBuilder(NAME, owner.getName()).description(DESCRIPTION_PREFIX)
+		static <T> MultiStateActionBuilder<T> buttonBuilder(Plugin owner, Plugin helpOwner) {
+			return new MultiStateActionBuilder<T>(NAME, owner.getName())
 					.toolBarIcon(ICON)
 					.toolBarGroup(GROUP)
-					.menuPath(DebuggerPluginPackage.NAME, DESCRIPTION_PREFIX)
-					.menuIcon(ICON)
+					.helpLocation(new HelpLocation(helpOwner.getName(), HELP_ANCHOR));
+		}
+
+		static ActionBuilder menuBuilder(DebuggerProgramLaunchOffer offer, Plugin owner,
+				Plugin helpOwner) {
+			return new ActionBuilder(offer.getConfigName(), owner.getName())
+					.description(offer.getButtonTitle())
+					.menuPath(DebuggerPluginPackage.NAME, offer.getMenuParentTitle(),
+						offer.getMenuTitle())
+					.menuIcon(offer.getIcon())
 					.menuGroup(GROUP)
 					.helpLocation(new HelpLocation(helpOwner.getName(), HELP_ANCHOR));
 		}
@@ -522,6 +573,22 @@ public interface DebuggerResources {
 		}
 	}
 
+	abstract class AbstractStepLastAction extends DockingAction {
+		public static final String NAME = "Step Last";
+		public static final Icon ICON = ICON_STEP_FINISH; // TODO: Draw one
+		public static final String HELP_ANCHOR = "step_last";
+
+		public static HelpLocation help(Plugin owner) {
+			return new HelpLocation(owner.getName(), HELP_ANCHOR);
+		}
+
+		public AbstractStepLastAction(Plugin owner) {
+			super(NAME, owner.getName());
+			setDescription("Repeat the last stepping action");
+			setHelpLocation(help(owner));
+		}
+	}
+
 	abstract class AbstractInterruptAction extends DockingAction {
 		public static final String NAME = "Interrupt";
 		public static final Icon ICON = ICON_TERMINATE;
@@ -611,6 +678,22 @@ public interface DebuggerResources {
 		}
 	}
 
+	interface InterpreterInterruptAction {
+		String NAME = "Interpreter Interrupt";
+		String DESCRIPTION = "Send an interrupt through this Interpreter";
+		Icon ICON = ICON_TERMINATE;
+		String HELP_ANCHOR = "interrupt";
+
+		public static ActionBuilder builder(Plugin owner) {
+			String ownerName = owner.getName();
+			return new ActionBuilder(ownerName, NAME)
+					.description(DESCRIPTION)
+					.toolBarIcon(ICON)
+					.keyBinding("CTRL I")
+					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
+		}
+	}
+
 	abstract class AbstractRecordAction extends DockingAction {
 		public static final String NAME = "Record";
 		public static final Icon ICON = ICON_TRACE;
@@ -682,17 +765,36 @@ public interface DebuggerResources {
 		}
 	}
 
-	interface AutoImportCurrentModuleAction {
-		String NAME = "Auto-Import Current Module";
-		String DESCRIPTION = "Import missing module at the cursor";
+	interface ImportMissingModuleAction {
+		String NAME = "Import Missing Module";
+		String DESCRIPTION = "Import the missing module from disk";
 		Icon ICON = ICON_IMPORT;
-		String HELP_ANCHOR = "auto_import_module";
+		String HELP_ANCHOR = "import_missing_module";
 
-		static ToggleActionBuilder builder(Plugin owner) {
+		static ActionBuilder builder(Plugin owner) {
 			String ownerName = owner.getName();
-			return new ToggleActionBuilder(NAME, ownerName).description(DESCRIPTION)
-					.menuIcon(ICON)
-					.menuPath(NAME)
+			return new ActionBuilder(NAME, ownerName)
+					.description(DESCRIPTION)
+					.toolBarIcon(ICON)
+					.popupMenuIcon(ICON)
+					.popupMenuPath(NAME)
+					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
+		}
+	}
+
+	interface MapMissingModuleAction {
+		String NAME = "Map Missing Module";
+		String DESCRIPTION = "Map the missing module to an existing import";
+		Icon ICON = ICON_MAP_MODULES;
+		String HELP_ANCHOR = "map_missing_module";
+
+		static ActionBuilder builder(Plugin owner) {
+			String ownerName = owner.getName();
+			return new ActionBuilder(NAME, ownerName)
+					.description(DESCRIPTION)
+					.toolBarIcon(ICON)
+					.popupMenuIcon(ICON)
+					.popupMenuPath(NAME)
 					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
 		}
 	}
@@ -811,7 +913,8 @@ public interface DebuggerResources {
 
 		static ActionBuilder builder(Plugin owner) {
 			String ownerName = owner.getName();
-			return new ActionBuilder(NAME, ownerName).toolBarGroup(GROUP)
+			return new ActionBuilder(NAME, ownerName)
+					.toolBarGroup(GROUP)
 					.toolBarIcon(ICON)
 					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
 		}
@@ -828,7 +931,26 @@ public interface DebuggerResources {
 		}
 
 		static ActionBuilder builder(String ownerName) {
-			return new ActionBuilder(NAME, ownerName).toolBarGroup(GROUP)
+			return new ActionBuilder(NAME, ownerName)
+					.toolBarGroup(GROUP)
+					.toolBarIcon(ICON)
+					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
+		}
+	}
+
+	interface ClearAction {
+		String NAME = "Clear";
+		String GROUP = "yyyy";
+		Icon ICON = ICON_CLEAR;
+		String HELP_ANCHOR = "clear";
+
+		static ActionBuilder builder(Plugin owner) {
+			return builder(owner.getName());
+		}
+
+		static ActionBuilder builder(String ownerName) {
+			return new ActionBuilder(NAME, ownerName)
+					.toolBarGroup(GROUP)
 					.toolBarIcon(ICON)
 					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
 		}
@@ -841,7 +963,23 @@ public interface DebuggerResources {
 
 		static ToggleActionBuilder builder(Plugin owner) {
 			String ownerName = owner.getName();
-			return new ToggleActionBuilder(NAME, ownerName).toolBarGroup(GROUP).toolBarIcon(ICON);
+			return new ToggleActionBuilder(NAME, ownerName)
+					.toolBarGroup(GROUP)
+					.toolBarIcon(ICON);
+		}
+	}
+
+	interface SelectNoneAction {
+		String NAME = "Select None";
+		String GROUP = "Select";
+		String HELP_ANCHOR = "select_none";
+
+		static ActionBuilder builder(Plugin owner) {
+			String ownerName = owner.getName();
+			return new ActionBuilder(NAME, ownerName)
+					.popupMenuGroup(GROUP)
+					.popupMenuPath(NAME)
+					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
 		}
 	}
 
@@ -853,7 +991,8 @@ public interface DebuggerResources {
 
 		static ActionBuilder builder(Plugin owner) {
 			String ownerName = owner.getName();
-			return new ActionBuilder(NAME, ownerName).toolBarGroup(GROUP)
+			return new ActionBuilder(NAME, ownerName)
+					.toolBarGroup(GROUP)
 					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR))
 					.toolBarIcon(ICON);
 		}
@@ -867,9 +1006,25 @@ public interface DebuggerResources {
 
 		static ActionBuilder builder(Plugin owner) {
 			String ownerName = owner.getName();
-			return new ActionBuilder(NAME, ownerName).description(DESCRIPTION)
+			return new ActionBuilder(NAME, ownerName)
+					.description(DESCRIPTION)
 					.menuGroup(GROUP)
 					.menuPath(NAME)
+					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
+		}
+	}
+
+	interface OpenProgramAction {
+		String NAME = "Open Program";
+		Icon ICON = ICON_PROGRAM;
+		String DESCRIPTION = "Open the program";
+		String HELP_ANCHOR = "open_program";
+
+		static ActionBuilder builder(Plugin owner) {
+			String ownerName = owner.getName();
+			return new ActionBuilder(NAME, ownerName)
+					.description(DESCRIPTION)
+					.toolBarIcon(ICON)
 					.helpLocation(new HelpLocation(ownerName, HELP_ANCHOR));
 		}
 	}
@@ -1019,6 +1174,18 @@ public interface DebuggerResources {
 			super(NAME, owner.getName());
 			setDescription("Clear all breakpoints in the table");
 			// TODO: Should combine help with other clear actions?
+			setHelpLocation(new HelpLocation(owner.getName(), HELP_ANCHOR));
+		}
+	}
+
+	abstract class AbstractMakeBreakpointsEffectiveAction extends DockingAction {
+		public static final String NAME = "Make Breakpoints Effective";
+		public static final Icon ICON = ICON_MAKE_BREAKPOINTS_EFFECTIVE;
+		public static final String HELP_ANCHOR = "make_breakpoints_effective";
+
+		public AbstractMakeBreakpointsEffectiveAction(Plugin owner) {
+			super(NAME, owner.getName());
+			setDescription("Place enabled but ineffective breakpoints where possible");
 			setHelpLocation(new HelpLocation(owner.getName(), HELP_ANCHOR));
 		}
 	}
@@ -1515,16 +1682,22 @@ public interface DebuggerResources {
 
 	static <T> Function<Throwable, T> showError(Component parent, String message) {
 		return e -> {
-			Msg.showError(parent, parent, DebuggerPluginPackage.NAME, message, e);
+			Throwable t = AsyncUtils.unwrapThrowable(e);
+			if (t instanceof CancelledException || t instanceof CancellationException) {
+				Msg.error(parent, "Cancelled: " + message);
+			}
+			else {
+				Msg.showError(parent, parent, DebuggerPluginPackage.NAME, message, e);
+			}
 			return null;
 		};
 	}
 
-	static <V, R> void setSelectedRows(Set<V> sel, Map<V, R> rowMap, GTable table,
+	static <V, R> void setSelectedRows(Set<V> sel, Function<V, R> rowMapper, GTable table,
 			RowObjectTableModel<R> model, GTableFilterPanel<R> filterPanel) {
 		table.clearSelection();
 		for (V v : sel) {
-			R row = rowMap.get(v);
+			R row = rowMapper.apply(v);
 			if (row == null) {
 				continue;
 			}

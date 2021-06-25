@@ -43,8 +43,8 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 			Set<TraceBreakpointKind> result = TraceBreakpointKindSet.decode(parts[0], false);
 			if (result.isEmpty()) {
 				Msg.warn(TraceBreakpointKind.class,
-					"Decoded empty set of kinds from bookmark. Assuming EXECUTE");
-				return Set.of(TraceBreakpointKind.EXECUTE);
+					"Decoded empty set of kinds from bookmark. Assuming SW_EXECUTE");
+				return Set.of(TraceBreakpointKind.SW_EXECUTE);
 			}
 			return result;
 		}
@@ -109,15 +109,15 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 			return location;
 		}
 
-		public Enablement computeEnablement() {
+		public ProgramEnablement computeEnablement() {
 			if (eBookmark != null) {
-				return Enablement.ENABLED;
+				return ProgramEnablement.ENABLED;
 			}
 			if (dBookmark != null) {
-				return Enablement.DISABLED;
+				return ProgramEnablement.DISABLED;
 			}
 			else {
-				return Enablement.DISABLED;
+				return ProgramEnablement.MISSING;
 			}
 		}
 
@@ -199,11 +199,11 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 		}
 
 		public boolean isEnabled() {
-			return computeEnablement().enabled;
+			return computeEnablement() == ProgramEnablement.ENABLED;
 		}
 
 		public boolean isDisabled() {
-			return computeEnablement().disabled;
+			return computeEnablement() == ProgramEnablement.DISABLED;
 		}
 
 		public String computeCategory() {
@@ -304,16 +304,15 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 			return recorder.getMemoryMapper().traceToTarget(address);
 		}
 
-		public Enablement computeEnablement() {
-			if (breakpoints.isEmpty()) {
-				return Enablement.DISABLED;
-			}
+		public TraceEnablement computeEnablement() {
+			TraceEnablement en = TraceEnablement.MISSING;
 			for (IDHashed<TraceBreakpoint> bpt : breakpoints) {
-				if (bpt.obj.isEnabled()) {
-					return Enablement.ENABLED;
+				en = en.combine(TraceEnablement.fromBool(bpt.obj.isEnabled()));
+				if (en == TraceEnablement.MIXED) {
+					return en;
 				}
 			}
-			return Enablement.DISABLED;
+			return en;
 		}
 
 		public boolean isEmpty() {
@@ -383,7 +382,7 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 				if (loc == null) {
 					continue;
 				}
-				actions.add(new EnableBreakpointActionItem(loc.getSpecification()));
+				actions.planEnable(loc);
 			}
 		}
 
@@ -402,7 +401,7 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 				if (!Objects.equals(spec.getKinds(), tKinds)) {
 					continue;
 				}
-				actions.add(new DisableBreakpointActionItem(spec));
+				actions.planDisable(loc);
 			}
 		}
 
@@ -421,10 +420,7 @@ interface LogicalBreakpointInternal extends LogicalBreakpoint {
 				if (!Objects.equals(spec.getKinds(), tKinds)) {
 					continue;
 				}
-				if (!(spec instanceof TargetDeletable)) {
-					continue;
-				}
-				actions.add(new DeleteBreakpointActionItem(spec));
+				actions.planDelete(loc);
 			}
 		}
 	}
